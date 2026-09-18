@@ -1,0 +1,1073 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>答题页 · 离线单文件</title>
+<style>
+  :root{--bg:#eef0f4;--card:#fff;--line:#dfe3e8;--fg:#1b1b1f;--dim:#6b7280;--key:#2b6cb0}
+  *{box-sizing:border-box}
+  html,body{margin:0;max-width:100%;overflow-x:hidden;overflow-x:clip}
+  body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 12px;position:sticky;top:0;z-index:5}
+  .top .wrap{max-width:760px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .top h1{font-size:16px;margin:0;flex:1 1 140px;min-width:0}
+  .top .tip{font-size:12.5px;color:var(--dim)}
+  .big{min-height:44px;padding:0 14px;border:1px solid var(--line);background:#f6f7f9;border-radius:10px;cursor:pointer;font:inherit}
+  #host{background:var(--card);min-height:60vh}
+  .foot{max-width:760px;margin:0 auto;padding:10px 12px 24px;color:var(--dim);font-size:13px}
+  /* 底部那行小字提示（原来在顶部，用户要求搬到底部声明上边）+ 答题时为底部固定栏留出的空行。
+   * ⚠ 合并版里这两条样式写在 app-template 的 <style> 里（模板的 <style> 不会被搬运过去）。 */
+  .ansfootrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;max-width:760px;margin:8px auto 0;padding:0 12px}
+  .ansfootrow:empty{display:none}
+  .footspace{display:none}
+  .answering .footspace{display:block;height:76px}
+  .drop{border:1px dashed #b9c0c8;border-radius:10px;padding:8px 10px;font-size:13px;color:var(--dim);
+        display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:44px}
+  .drop.on{background:#e8f0fb;border-color:var(--key)}
+  /* ⚠ 顶栏 actions 与题库首页（.libpick*）的样式**不写在这儿**：
+   *   合并版（答题全能版）只搬运"页面逻辑"，模板的 <style> 不会跟着过去 ——
+   *   写成"页面逻辑自己注入"（见脚本里的 LIB_CSS），独立页与合并版才是同一份样式。 */
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap">
+  <h1>答题页（离线 · 单文件）</h1>
+  <div class="actions">
+    <button class="big" id="btnHome" hidden>返回题库</button>
+    <button class="big" id="btnRedraw" hidden>重新生成试卷</button>
+    <button class="big" id="btnExport" hidden title="把这道卷连同整个页面打成单个文件：别人双击即可离线作答，不需要网络、也不用安装任何东西">导出为独立 HTML</button>
+  </div>
+  <span id="storeWarn" style="display:none;flex:1 1 100%;color:#b42318;font-size:12.5px;line-height:1.5"></span>
+</div></div>
+
+<div id="host"></div>
+<div id="aireview" class="hidden"></div>
+<div class="ansfootrow"><span class="tip" id="srcTip">从下面的题库选一套卷开始</span></div>
+<div class="foot">
+  记录（进度 / 错题）只写你本机浏览器；别人分享来的文件与你的记录互不干扰。
+</div>
+<div id="footSpace" class="footspace"></div>
+
+<script>
+/* ========== 内联：解析核心（顺序不可颠倒！） ========== */
+__ZIP_CORE__
+__DOCX_CORE__
+__TEXT_CORE__
+__SEGMENT_CORE__
+__PARSER_CORE__
+/* ========== 内联：结构 / 存储 / 计分 / 流程 ========== */
+__SCHEMA_CORE__
+__DATA_CORE__
+__QUIZ_CORE__
+__FLOW_CORE__
+__WRONG_CORE__
+__EXAMS_CORE__
+/* ========== 内联：快捷面板 + 作答界面 ========== */
+__QUICK_UI__
+__ATTEMPT_CORE__
+__ATTEMPT_VIEW__
+__DELETE_DIALOG__
+/* ========== 内联：AI（密钥 + 整卷点评） ========== */
+__AI_CORE__
+/* 密钥设置面板：交卷后的「整卷点评」要能**就地填 Key**（用户报障："没有输入 api key 的地方"），
+ * 所以这一页也把它内联进来（顺序必须在 AI_SCENE 之前）。 */
+__AI_SETTINGS__
+__AI_SCENE__
+/* ========== 内联：内置样卷 ========== */
+const SAMPLE_B64 = "__SAMPLE_B64__";
+
+(function () {
+  const host = document.getElementById('host');
+  const tip = document.getElementById('srcTip');
+  /* ---------- 顶栏 actions 与题库首页的样式：由页面逻辑自己注入 ----------
+   * 为什么不用模板的 <style>：合并版（答题全能版）只搬运**页面逻辑**这一段，
+   * 模板的 <style> 不会跟着过去 —— 写在 <style> 里就会出现"独立页好看、合并版裸奔"。
+   * `<style>` 插在 body 里（宿主节点之前）在 HTML 里是合法的，也省得去够 head。 */
+  const LIB_CSS_ID = 'answer-lib-css';
+  const LIB_CSS = [
+    '.actions{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:1 1 100%}',
+    '.libpick{max-width:780px;margin:10px auto 0;padding:0 12px}',
+    '.libpick.hidden{display:none}',
+    '.libpick-in{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px}',
+    '.libpick-hd{display:flex;align-items:center;gap:8px;font-weight:600;margin-bottom:4px;flex-wrap:wrap}',
+    '.libpick-hd .grow{flex:1 1 auto;min-width:0}',
+    '.libpick-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 0;border-top:1px solid #eceef1}',
+    '.libpick-row .t{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}',
+    '.libpick-row .m{color:var(--dim);font-size:13px;flex:0 1 auto}',
+    '.libpick-go{min-height:44px;min-width:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;',
+    '  background:#f6f7f9;cursor:pointer;font:inherit;font-size:14px}',
+    '.libpick-go.primary{background:var(--key);border-color:var(--key);color:#fff;font-weight:600}',
+    '.libpick-empty{color:var(--dim);font-size:14px;padding:6px 0;line-height:1.6}',
+    '.libpick-now{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 10px;margin:6px 0 2px;',
+    '  background:#eef3ff;border:1px solid #cdd9f5;border-radius:10px;font-size:14px}',
+    '.libpick-now .grow{flex:1 1 200px;min-width:0;overflow-wrap:anywhere}',
+    '.libpick-foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:8px;margin-top:8px;',
+    '  border-top:1px solid #eceef1;color:var(--dim);font-size:13px}',
+    /* 「答卷前设置」卡片（点「开始作答」先进来定这一轮怎么出卷）+ 删除按钮 */
+    '.pk-card{border:1px solid var(--line);border-radius:12px;background:var(--card);padding:10px 12px}',
+    '.pk-hd{display:flex;align-items:center;gap:10px;flex-wrap:wrap;font-weight:600;margin-bottom:4px}',
+    '.pk-hd .grow{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}',
+    '.pk-host{margin:6px 0}',
+    '.pk-prev{margin:8px 0;padding:8px 10px;border-radius:10px;background:#eef3ff;border:1px solid #cdd9f5;',
+    '  font-size:14px;line-height:1.6}',
+    '.pk-prev.bad{background:#fdecea;border-color:#f0c2be;color:#8c1d18}',
+    /* 「题库里没有的题型已自动置 0」那句话：单独一条浅黄提示，不跟预览数混在一起 */
+    '.pk-zero{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:#fdf6e3;border:1px solid #e8d9a8;',
+    '  color:#7a5c00;font-size:13px;line-height:1.6}',
+    '.pk-acts{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}',
+    '.pk-remember{display:flex;align-items:center;gap:8px;min-height:44px;color:var(--dim);font-size:13px}',
+    '.pk-remember input{width:20px;height:20px}',
+    '.libpick-del{color:#b3261e;border-color:#f0c2be}'
+  ].join('\n');
+  const libStyle = document.createElement('style');
+  libStyle.id = LIB_CSS_ID;
+  libStyle.textContent = LIB_CSS;
+  host.parentNode.insertBefore(libStyle, host);
+  let liveStore = null;          // 当前这套题的进度存取器
+  let view = null;
+  /* 当前这一轮从哪来（题库的哪套卷 / 轮次标记）——「重开一轮」「换一批」要按它重抽 */
+  let roundCtx = null;
+  /* 轮次序号：每 boot 一次 +1。用来判断"这次保存/提示还属不属于当前这一轮" */
+  let roundSeq = 0;
+  /*
+   * **落盘空间**（接收者隔离的唯一开关）：
+   *   · 你自己打开/拖进来的卷 → 全局空间 `app`（出题者自己的记录就在这里）；
+   *   · 别人分享来的文件（自带载荷）→ `recv_<试卷ID>`（接收者本地空间）。
+   * 两边空间不同 → 同一台机器上，出题者的记录与接收者的作答**互不可见**；
+   * 两份不同的分享文件卷 id 不同 → 各自的 `recv_<id>` 也不同，记录不串。
+   */
+  let storeNs = DataCore.NS_GLOBAL;
+  let received = false;          // 这份文件是不是"别人分享来的"
+  /*
+   * **挂载前**抓一次原始页面当"导出壳"。
+   * 为什么必须在这一刻抓：此刻 `#host` 还是空的、面板也没挂上，抓到的就是"一个干净的答题页"；
+   * 等挂载完再抓，等于把"你上一次的作答界面 + 运行状态"一起打包给人家。
+   * `outerHTML` 是浏览器自己的序列化结果（原始文本没留下来，这是唯一拿得到"整页"的途径）。
+   */
+  const SHELL = '<!doctype html>\n' + document.documentElement.outerHTML;
+  /*
+   * **开页先体检本机存储**（真写一次再读回来，见 DataCore.storageHealth）：
+   * 不可用就**立刻**在顶部把话说清楚（为什么 + 怎么办），而不是等第一次自动保存失败才提示 ——
+   * 也不能瞒着用户继续存（那就是"假成功"）。
+   * ⚠ 放在抓 SHELL **之后**：导出的文件不该带着"刚才那台机器"的告警文案。
+   */
+  /* ⚠ 取 `window.localStorage` **这个动作本身**就可能抛（隐私模式 / 有的浏览器在 file:// 下直接 SecurityError）。
+   *   必须自己兜住：早先这里没兜 → 整个答题面板的页面逻辑**当场中断**，收件人打开分享文件只看到一个
+   *   没画完的空壳（连一句提示都没有）。这是线上"导出带的试卷在别的浏览器打开看不了"的成因之一
+   *   —— 手机上看不出来是因为它往往**什么都不报**。拿不到后端就交给 storageHealth 按"没有存储"处理。 */
+  const HEALTH = (function () {
+    let backend = null;
+    try { backend = window.localStorage; } catch (e) { backend = null; }
+    return DataCore.storageHealth(backend);
+  })();
+  if (HEALTH.degraded) {
+    const warn = document.getElementById('storeWarn');
+    warn.textContent = '⚠ ' + HEALTH.message;
+    warn.style.display = 'block';
+  }
+
+  function b64ToBuf(b64) {
+    const bin = atob(b64), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  function questionsOf(parsed) {
+    return (parsed.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+  }
+  /* 生成本地存储。
+   * 进度记录很小（只有作答文本），所以先只接 localStorage（单后端模式，契约允许 large:null）；
+   * 真要放大卷子时再接 IndexedDB —— 那属于"存储能力"的后续小类。
+   * ⚠ 命名空间**不写死**：走 storeNs（出题者自己的 app / 接收者那份 recv_<卷id>）。 */
+  function makeStore() {
+    try {
+      if (!window.localStorage) return null;
+      return DataCore.createStore({ small: window.localStorage, large: null, namespace: storeNs });
+    } catch (e) { return null; }        // 存储不可用 → 交给 AttemptCore 降级为内存态
+  }
+
+  /* ---------- 题库首页（默认就显示这一页） ----------
+   * 为什么需要它：导入面板把卷写进题库（exam::<id>），而答题页原先只认"拖进来的文件"——
+   * 于是**导入完就回不到答题**（用户实测报障："导入之后答不了题"）。
+   * 现在它是**主页**：一进答题页看到的就是题库；答题中点「返回题库」也能回来。
+   * 页面挂在 #host **外面**（动态创建、不写死 id）：合并版里 RUN_PANE 只重映射模板里写死的 id，
+   * 动态元素不需要进 idMap，也就不会和别的面板撞 id。 */
+  const libPanel = document.createElement('div');
+  libPanel.className = 'libpick';
+  host.parentNode.insertBefore(libPanel, host);
+  let libBusy = false;
+  /* 顶部两个按钮：只在"有一轮在答"时露出来 */
+  const homeBtn = document.getElementById('btnHome');
+  const redrawBtn = document.getElementById('btnRedraw');
+  const exportBtn = document.getElementById('btnExport');
+  /* `on` = "正在答题"（这个页面 / 这个面板现在有活干）。
+   * 除了露出两颗粒按钮，还要在**根元素**上挂/摘 `.answering`：
+   *   · 壳那边靠它把「声明后面那一行空位」显出来（否则底部固定栏会压住最后一行，用户报过）；
+   *   · 首页态不需要那块空位，摘掉就回到原来的紧凑排版。
+   * 用 documentElement（作用域化的 document 也把它指向真根元素），所以合并版与单页版都生效。 */
+  function showHomeChrome(on) {
+    if (homeBtn) homeBtn.hidden = !on;
+    /* 「重新生成试卷」（原「再抽一次」，用户要求挪到「返回题库」旁边）与它同进同出：
+     * 只有"有一轮在答"时才露出来。合并版里这两颗被 moveAnswerActions() 一起搬进底部固定栏。 */
+    if (redrawBtn) redrawBtn.hidden = !on;
+    if (exportBtn) exportBtn.hidden = !on;
+    try {
+      const de = document.documentElement;
+      if (de && de.classList && de.classList.toggle) de.classList.toggle('answering', !!on);
+    } catch (e) { /* 根元素拿不到就当没有这块空位：不影响答题 */ }
+    /* 回到**题库首页** → 请壳把页签那排展开（用户要求："在首页时自动切换为展开模式"）。
+     * 首页本来就是来挑页签 / 挑卷的地方，那一排该摆着；答题时才留着手动收起的那颗悬浮按钮。
+     * ⚠ 只**展开**、绝不自动收起（"点页签跳转之后不要自动收起"是用户早先明确要求的）。
+     * 独立单页版（答题页.html）没有这一排 → typeof 判断后才调。 */
+    if (!on && typeof window.__tabsExpand === 'function') {
+      try { window.__tabsExpand(); } catch (e2) { /* 壳里没这段就当没这回事 */ }
+    }
+  }
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text != null) n.textContent = String(text);
+    return n;
+  }
+  /* 时间只显示到分钟（列表里够用，也不暴露秒级行为） */
+  function shortTime(s) {
+    const t = String(s == null ? '' : s);
+    return t ? t.replace('T', ' ').slice(0, 16) : '';
+  }
+  function libEmpty(msg) {
+    const box = el('div', 'libpick-in');
+    box.appendChild(el('div', 'libpick-hd', '题库'));
+    box.appendChild(el('div', 'libpick-empty', msg));
+    libPanel.textContent = '';
+    libPanel.appendChild(box);
+  }
+  /* 题目构成一行小字：选 100 / 多 80 / 判 60 / 简 0（只显示非零的） */
+  function countsText(counts) {
+    const keys = ['单选', '多选', '判断', '简答'];
+    const parts = [];
+    keys.forEach(function (k) { const n = (counts && counts[k]) || 0; if (n) parts.push(k.slice(0, 1) + ' ' + n); });
+    return parts.join(' · ');
+  }
+  async function paintLibrary() {
+    /* ⚠ 防重入：连点两下会把列表画两遍、还可能同时 boot 两次（同一套卷开出两个会话） */
+    if (libBusy) return;
+    libBusy = true;
+    try {
+      const store = makeStore();
+      libPanel.textContent = '';
+      if (!store) { libEmpty('存储不可用（浏览器禁用了本地存储），题库读不出来。'); return; }
+      let r = null;
+      try { r = await ExamsCore.listExams(store, { limit: 50 }); } catch (e) { r = null; }
+      if (!r || !r.ok) {
+        libEmpty('题库读不出来：' + ((r && (r.error || r.message)) || '未知错误'));
+        return;
+      }
+      const box = el('div', 'libpick-in');
+      const hd = el('div', 'libpick-hd');
+      hd.appendChild(el('span', 'grow', '题库 · ' + r.total + ' 套' + (r.healed ? '（索引已自愈）' : '')));
+      box.appendChild(hd);
+      /* 这份文件**打包了多套卷**（出题者用「导出分享」多选导出的）→ 在首页顶部逐套列出来，
+       * 收件人想答哪套点哪套。每套各自建自己的接收者空间（recv_<卷id>.<指纹>，互不串记录）。
+       * ⚠ 这些卷来自**文件载荷**，不写进收件人的题库（收件人自己的卷子仍然只有他自己的那些）。 */
+      if (EMBEDDED && EMBEDDED.exams && EMBEDDED.exams.length > 1) {
+        const packedHd = el('div', 'libpick-now');
+        packedHd.appendChild(el('span', 'grow', '这份文件里打包了 ' + EMBEDDED.exams.length + ' 套卷'));
+        box.appendChild(packedHd);
+        EMBEDDED.exams.forEach(function (ex) {
+          const qsEx = (ex.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+          const row = el('div', 'libpick-row');
+          row.setAttribute('data-packed-id', String(ex.id));
+          row.appendChild(el('span', 't', '《' + (ex.title || ex.id) + '》'));
+          row.appendChild(el('span', 'm', qsEx.length + ' 题 · 来自这份分享文件'));
+          const one = el('button', 'libpick-go primary', '开始作答');
+          one.type = 'button';
+          one.addEventListener('click', function () {
+            if (!qsEx.length) { tip.textContent = '这套卷里没有题目'; return; }
+            /* 接收者隔离：记录只写这套卷自己的 recv_ 空间（与出题者本机、与文件里别的卷都不串） */
+            storeNs = DataCore.receiverNamespaceFor(ex);
+            received = true;
+            tip.textContent = '已载入《' + (ex.title || ex.id) + '》（' + qsEx.length + ' 题，来自分享文件）';
+            boot(ex.id, ex.title || ex.id, qsEx, true, QuizCore.resolveConfig(QuizCore.DEFAULT_CONFIG, ex));
+          });
+          row.appendChild(one);
+          box.appendChild(row);
+        });
+      }
+      /* 「上一轮」那一行：只在确实有过一轮时出现 ——
+       *   继续这一轮 = 同一份设置、同一个种子（同一批题 → 进度接着答）；
+       *   换一批 = 种子 +1（只有"抽题"的那几条规则才有得换，全部作答没有）；
+       *   改设置再做一轮 = 回"答卷前设置"页改完再开（设置只在这一处改，跟题库列表走同一条路）。 */
+      if (roundCtx) {
+        const isAllRound = (roundCtx.roundTag === 'all');
+        const now = el('div', 'libpick-now');
+        now.appendChild(el('span', 'grow', '上一轮：《' + roundCtx.title + '》' + roundCtx.count + ' 题'
+          + (isAllRound ? '（全部作答）' : '（按设置抽的一轮）')));
+        const cont = el('button', 'libpick-go', '继续这一轮');
+        cont.type = 'button';
+        cont.addEventListener('click', function () { resumeRound(); });
+        now.appendChild(cont);
+        if (!isAllRound) {
+          const swap = el('button', 'libpick-go', '换一批');
+          swap.type = 'button';
+          swap.addEventListener('click', function () { redrawRound(1); });
+          now.appendChild(swap);
+        }
+        const cfgBtn = el('button', 'libpick-go', '改设置再做一轮');
+        cfgBtn.type = 'button';
+        cfgBtn.addEventListener('click', function () { openPickSettings(roundCtx.examId); });
+        now.appendChild(cfgBtn);
+        box.appendChild(now);
+      }
+      if (!r.exams.length) {
+        box.appendChild(el('div', 'libpick-empty',
+          '题库里还没有卷：去「导入 / 校对」页把 .docx / .txt 拖进去（或点「选择 .docx / .txt」），'
+          + '校对完点「确认入库」，卷就会出现在这里。'));
+      } else {
+        r.exams.forEach(function (m) {
+          const row = el('div', 'libpick-row');
+          row.setAttribute('data-exam-id', String(m.id));
+          row.appendChild(el('span', 't', '《' + (m.title || m.id) + '》'));
+          row.appendChild(el('span', 'm', m.total + ' 题' + (countsText(m.counts) ? '（' + countsText(m.counts) + '）' : '')
+            + (m.needsReview ? ' · 待校对 ' + m.needsReview : '')
+            + (m.updatedAt ? ' · ' + shortTime(m.updatedAt) : '')));
+          /* 两个按钮：开始作答（先进"答卷前设置"页）/ 删除。
+           * ⚠ 「答整卷」不再单独占一个按钮 —— 它就是设置页里的「全部作答」那一条（用户要求合并）。 */
+          const one = el('button', 'libpick-go primary', '开始作答');
+          one.type = 'button';
+          one.addEventListener('click', function () { openPickSettings(m.id); });
+          row.appendChild(one);
+          const del = el('button', 'libpick-go libpick-del', '删除');
+          del.type = 'button';
+          del.addEventListener('click', function () { askDelete(m.id, m.title || m.id); });
+          row.appendChild(del);
+          box.appendChild(row);
+        });
+      }
+      /* 首页底部的"另一条路"：内置样卷（以前是一进页面就自动加载的，现在改成手动点）。
+       * ⚠ 这里**不能**再写"直接拖入 .docx" —— 拖入区已经搬到「导入 / 校对」页（用户要求）。 */
+      const foot = el('div', 'libpick-foot');
+      foot.appendChild(el('span', 'grow', '先载入内置样卷（10 题）试试。'));
+      const smp = el('button', 'libpick-go', '载入内置样卷');
+      smp.type = 'button';
+      smp.addEventListener('click', loadSample);
+      foot.appendChild(smp);
+      /* 「清除答题记录」（用户要求）：清的是**作答产生的东西**（进度 / 成绩 / 可选错题本），
+       * 卷本体与题一道不动。点它先弹窗说清"会清掉什么"，选完才动手。 */
+      const wipe = el('button', 'libpick-go libpick-del', '清除答题记录');
+      wipe.type = 'button';
+      wipe.setAttribute('data-lib', 'wipe');
+      wipe.addEventListener('click', function () { askClearRecords(); });
+      foot.appendChild(wipe);
+      box.appendChild(foot);
+      libPanel.appendChild(box);
+    } finally {
+      libBusy = false;
+    }
+  }
+  /* ---------- 答卷前设置（点「开始作答」先进来看/改"这一轮怎么出卷"，再开始） ----------
+   * 三件事都在这一页：抽题规则与题量、分数线、以及「全部作答」（= 不打散、整套卷都做）。
+   * 控件**复用底部快捷面板那一套**（同一个 `QuickPanel.mount(inline)` + `FlowCore.quickModel/quickAction`）：
+   * 抽题/分数线的规则只有一处定义，这里不另写一份（否则两边迟早各说各话）。
+   * ⚠ 答题时那个底部面板把这页的两组**排除**掉了（见 attempt-view 的 excludeGroups）：设置只有这一处改。 */
+  let pickView = null;                 // 正在看设置卡片时：{examId,title,all,cfg,remember,panel,zeroed}
+  async function openPickSettings(examId) {
+    const store = makeStore();
+    if (!store) { tip.textContent = '存储不可用，读不了卷'; return { ok: false }; }
+    let got = null;
+    try { got = await ExamsCore.getExam(store, examId); } catch (e) { got = null; }
+    if (!got || !got.ok) { tip.style.color = '#b42318'; tip.textContent = '这套卷读不出来了（可能已被删除）'; paintLibrary(); return { ok: false }; }
+    /* 设置的起点 = 三层取值（内置 → **本机全局设置** → 卷自己的快照） */
+    let gc = null;
+    try { gc = await ExamsCore.readGlobalConfig(store); } catch (e) { gc = null; }
+    const base = QuizCore.resolveConfig((gc && gc.ok && gc.config) || null, got.exam);
+    const all = (got.exam.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+    /* 逐题型目标按**这份题库的实际构成**适配：题库里一道都没有的题型，目标置 0。
+     * 否则默认的"简答 2"会让这页一直喊"缺 2 题"，而用户根本填不出这两道题。 */
+    const adapted = QuizCore.adaptPickToBank(all, base);
+    /* 「未作答优先」要靠错题本算档位 → 进设置页就先读一遍（读不到也不拦着答题，只是退回随机） */
+    await loadWrongTiers(examId);
+    pickView = {
+      examId: examId, title: got.exam.title || examId,
+      all: all,
+      /* `remember:false` = 默认**不**动本机全局设置：改完只对这一轮生效。
+       * 想让它变成以后抽题的默认，得自己勾上那个勾（不勾却悄悄改默认，会让人下次莫名其妙换了一套抽法）。 */
+      cfg: adapted.config, remember: false, panel: null, zeroed: adapted.zeroed || []
+    };
+    paintPickSettings();
+    return { ok: true };
+  }
+  function closePickSettings(silent) {
+    if (pickView && pickView.panel && pickView.panel.destroy) pickView.panel.destroy();
+    pickView = null;
+    if (!silent) paintLibrary();
+  }
+  /* 这一轮会出多少题：直接**空跑一次真出卷**（纯函数、同种子结果一致）——不用另写一套估算规则。
+   * 「全部作答」也走同一条路（pickQuestions 认 mode='all' = 整套卷都拿上），所以这一行永远
+   * 说的是"真点开始之后会发生的事"，而不是另行估算的数字。 */
+  function previewPick() { return drawRound(pickView.all, pickView.cfg); }
+  function updatePickPreview() {
+    if (!pickView) return;
+    const prev = libPanel.querySelector('.pk-prev');
+    const startBtn = libPanel.querySelector('[data-pk="start"]');
+    if (!prev) return;
+    const picked = previewPick();
+    const n = picked.questions.length;
+    const isAll = !!(picked.meta && picked.meta.mode === 'all');
+    const verb = isAll ? '这一轮做全部 ' : '这一轮会抽 ';
+    prev.className = 'pk-prev' + (n ? '' : ' bad');
+    prev.textContent = n
+      ? (verb + n + ' 题' + pickSummary(picked) + (picked.meta.warn ? ' · 提示：' + picked.meta.warn : ''))
+      : ((isAll ? '这套卷里没有可作答的题目' : '这一轮会抽 0 题') + ' —— ' + (picked.meta.warn || '检查上面的规则与题库构成'));
+    if (startBtn) startBtn.disabled = (n === 0);
+  }
+  function paintPickSettings() {
+    if (!pickView) return;
+    libPanel.textContent = '';
+    const card = el('div', 'pk-card');
+    const hd = el('div', 'pk-hd');
+    hd.appendChild(el('span', 'grow', '答卷前设置 · 《' + pickView.title + '》'));
+    const back = el('button', 'libpick-go', '返回列表');
+    back.type = 'button';
+    back.addEventListener('click', function () { closePickSettings(); });
+    hd.appendChild(back);
+    card.appendChild(hd);
+    card.appendChild(el('div', 'libpick-empty', '出卷规则与分数线都在下面这份设置里。'));
+    /* 题库里没有的题型被自动置 0 时，必须当面说一句：数字被别人动过，用户有权知道动了什么、为什么。 */
+    if (pickView.zeroed && pickView.zeroed.length) {
+      card.appendChild(el('div', 'pk-zero',
+        '题库里没有' + pickView.zeroed.map(function (z) { return z.type + '题'; }).join('、')
+        + ' → 这几型已自动置 0。'));
+    }
+    const host2 = el('div', 'pk-host');
+    card.appendChild(host2);
+    card.appendChild(el('div', 'pk-prev', '（正在算这一轮会出多少题…）'));
+    const acts = el('div', 'pk-acts');
+    const start = el('button', 'libpick-go primary', '开始作答');
+    start.type = 'button';
+    start.setAttribute('data-pk', 'start');
+    start.addEventListener('click', function () { startDraw(); });
+    const cancel = el('button', 'libpick-go', '取消');
+    cancel.type = 'button';
+    cancel.addEventListener('click', function () { closePickSettings(); });
+    const rem = el('label', 'pk-remember');
+    const chk = document.createElement('input');
+    chk.type = 'checkbox'; chk.checked = !!pickView.remember;
+    chk.setAttribute('data-pk', 'remember');
+    chk.addEventListener('change', function () { if (pickView) pickView.remember = !!chk.checked; });
+    rem.appendChild(chk);
+    rem.appendChild(el('span', null, '记住这套设置（以后出卷默认用它）'));
+    acts.appendChild(start); acts.appendChild(cancel); acts.appendChild(rem);
+    card.appendChild(acts);
+    libPanel.appendChild(card);
+    pickView.panel = QuickPanel.mount({
+      container: host2, config: pickView.cfg, inline: true, collapsed: false,
+      title: '出卷设置',
+      /* 答题时的底部面板把这两组**排除**了 → 这里就是改它们的唯一入口，两组都要画出来 */
+      groups: ['抽题与题量', '分数线', '判分'],
+      onChange: function (next) { if (pickView) { pickView.cfg = next; updatePickPreview(); } }
+    });
+    updatePickPreview();
+  }
+  async function startDraw() {
+    if (!pickView) return { ok: false };
+    const store = makeStore();
+    const picked = previewPick();
+    const isAll = !!(picked.meta && picked.meta.mode === 'all');
+    if (!picked.questions.length) {
+      tip.style.color = '#b42318';
+      tip.textContent = isAll ? '这套卷里没有可作答的题目' : ('这一轮抽到 0 题：' + (picked.meta.warn || '检查抽题规则与题库构成'));
+      return { ok: false };
+    }
+    const cfg = QuizCore.snapshotConfig(pickView.cfg);
+    if (pickView.remember && store) {
+      /* 存进"本机全局设置"（三层取值里的 global 层）——下次出卷都默认用它 */
+      const w = await ExamsCore.writeGlobalConfig(store, { pick: cfg.pick });
+      if (!w.ok) tip.textContent = '设置没存成默认（' + (w.error || w.hint || '') + '），这一轮照常用它出卷';
+    }
+    const examId = pickView.examId;
+    /* 「全部作答」用轮次标记 'all'（与"旧的直接开整卷"同一个进度键，接着答得上）；
+     * 抽题那几条用题集指纹 —— 换了题就是另一轮，进度互不覆盖。 */
+    const args = { pick: picked, roundTag: isAll ? 'all' : roundTagOf(picked), cfg: cfg };
+    closePickSettings(true);            // 直接进答题，不再画一遍列表
+    return bootFromLibrary(examId, args);
+  }
+
+  /* ---------- 删卷：先问清楚（连记录一起删 / 只删卷本体），再按选定政策执行 ----------
+   * 与错题本用的是**同一个** DeleteDialog 与同一对 ExamsCore 接口，不另写一套询问。 */
+  let delDialog = null;
+  async function askDelete(examId, title) {
+    const store = makeStore();
+    if (!store) { tip.textContent = '存储不可用，删不了'; return; }
+    const pv = await ExamsCore.deletePreview(store, examId);
+    if (!pv.ok) { tip.textContent = pv.error || '这份试卷已经不在了'; paintLibrary(); return; }
+    if (delDialog) { delDialog.destroy(); delDialog = null; }
+    delDialog = DeleteDialog.mount({
+      container: host.parentNode || host,
+      prompt: pv.plan,
+      onChoose: function (policy) { runDelete(examId, policy, pv.title || title); },
+      onCancel: function () {
+        if (delDialog) { delDialog.destroy(); delDialog = null; }
+        tip.textContent = '已取消：什么都没删';
+      }
+    });
+  }
+  async function runDelete(examId, policy, title) {
+    if (delDialog) { delDialog.destroy(); delDialog = null; }
+    const store = makeStore();
+    const r = store ? await ExamsCore.deleteExam(store, examId, { policy: policy, now: new Date().toISOString() }) : { ok: false };
+    if (!r.ok) { tip.style.color = '#b42318'; tip.textContent = '删除失败：' + (r.error || r.message || ''); return; }
+    if (roundCtx && roundCtx.examId === examId) roundCtx = null;   // 「上一轮」那行别指向已删的卷
+    cancelFlash();
+    tip.style.color = '';
+    tip.textContent = '已删除《' + (title || examId) + '》'
+      + (policy === 'cascade' ? '：连作答记录与错题一起删了（不可恢复）'
+                              : '：只删了卷本体，作答记录留着（' + ((r.orphansKept || []).length) + ' 类）');
+    paintLibrary();
+  }
+  /* ---------- 清除答题记录（用户要求：首页新增） ----------
+   * 与删卷共用同一个 DeleteDialog（同一个"先问清楚再动手"的习惯），但清的是**作答产生的东西**：
+   *   · 作答进度（含"整卷"与每一轮抽题各自那份）、成绩记录 → 一定要清；
+   *   · 错题本 → 由用户在弹窗里选（它同时也喂给「未作答优先」的档位，清不清该他说了算）。
+   * 弹窗里把**真实数字**摆出来（几套卷的进度 / 答过多少题 / 错题多少条），别让用户"盲点一下"。
+   * ⚠ 清完必须把 roundCtx 放下：首页那行「上一轮《…》」指的正是刚被清掉的那份进度，
+   *   留着它等于给用户一个点下去就"从零开始"的假承诺。 */
+  let wipeDialog = null;
+  async function askClearRecords() {
+    const store = makeStore();
+    if (!store) { tip.textContent = '存储不可用，清不了'; return { ok: false }; }
+    const pv = await ExamsCore.attemptRecordPreview(store);
+    if (!pv.ok) { tip.style.color = '#b42318'; tip.textContent = pv.error || '读不出本机记录'; return { ok: false }; }
+    if (!pv.progress.keys.length && !pv.records.keys.length && !pv.wrong.keys.length) {
+      cancelFlash();
+      tip.textContent = '本机没有答题记录（也没有错题），不用清';
+      return { ok: true, nothing: true };
+    }
+    const msg = '会清掉的：作答进度 ' + pv.progress.rounds + ' 份（' + pv.progress.exams.length + ' 套卷'
+      + (pv.progress.answered ? '、共答过 ' + pv.progress.answered + ' 题' : '') + '）'
+      + (pv.records.keys.length ? '、成绩记录 ' + pv.records.entries + ' 条' : '')
+      + '。卷本体与题目一道不动。';
+    const wrongMsg = pv.wrong.keys.length
+      ? ('错题本里还有 ' + pv.wrong.books + ' 套卷 / ' + pv.wrong.entries + ' 条错题 —— 要不要一起清，选下面那一项')
+      : '本机没有错题本记录。';
+    if (wipeDialog) { wipeDialog.destroy(); wipeDialog = null; }
+    wipeDialog = DeleteDialog.mount({
+      container: host.parentNode || host,
+      prompt: {
+        title: '清除答题记录？',
+        message: msg,
+        note: wrongMsg,
+        cancelLabel: '取消（什么都不清）',
+        options: [
+          { policy: 'records', label: '只清作答进度', detail: '错题本留着（错题还能复习，「未作答优先」照旧算）' }
+        ].concat(pv.wrong.keys.length ? [
+          { policy: 'recordsAndWrong', label: '进度 + 错题本一起清', detail: '等于回到"从没做过这套卷"的状态（不可恢复）',
+            danger: true }
+        ] : [])
+      },
+      onChoose: function (policy) { runClearRecords(policy === 'recordsAndWrong'); },
+      onCancel: function () {
+        if (wipeDialog) { wipeDialog.destroy(); wipeDialog = null; }
+        tip.textContent = '已取消：什么都没清';
+      }
+    });
+    return { ok: true, preview: pv };
+  }
+  async function runClearRecords(includeWrong) {
+    if (wipeDialog) { wipeDialog.destroy(); wipeDialog = null; }
+    const store = makeStore();
+    if (!store) { tip.textContent = '存储不可用，清不了'; return { ok: false }; }
+    const r = await ExamsCore.clearAttemptRecords(store, { includeWrong: includeWrong });
+    if (!r.ok) {
+      tip.style.color = '#b42318';
+      tip.textContent = '清除没做完：' + (r.message || r.error || '未知原因');
+      return r;
+    }
+    roundCtx = null;                    // 刚被清掉的那份进度，别再挂在首页上
+    cancelFlash();
+    tip.style.color = '';
+    const c = r.cleared;
+    tip.textContent = r.nothing
+      ? '本机没有答题记录，什么都没清'
+      : ('已清除答题记录：作答进度 ' + c.progress + ' 份、成绩记录 ' + c.records + ' 条'
+         + (includeWrong ? ('、错题本 ' + c.wrong + ' 套（' + c.wrongEntries + ' 条错题）') : '（错题本留着）')
+         + '。卷本体与题目没动');
+    paintLibrary();
+    return r;
+  }
+  /* 从题库把一套卷挂上答题界面（allowResume：同一套卷接着上次答）
+   * opts.roundTag  —— 轮次标记（同一套卷的"整卷"与"抽一轮"各自一份进度，互不覆盖）
+   * opts.pick      —— 这一轮要用的题（不给就用整卷） */
+  async function bootFromLibrary(examId, opts) {
+    const o = opts || {};
+    const store = makeStore();
+    if (!store) { tip.style.color = '#b42318'; tip.textContent = '存储不可用，题库读不出来'; return { ok: false }; }
+    let got = null;
+    try { got = await ExamsCore.getExam(store, examId); } catch (e) { got = null; }
+    if (!got || !got.ok) {
+      tip.style.color = '#b42318';
+      tip.textContent = '这套卷读不出来：' + ((got && (got.error || got.message)) || '可能已被删除');
+      paintLibrary();
+      return { ok: false };
+    }
+    const exam = got.exam;
+    /* 抽题/判分口径：调用方显式给了就用手给的（"重开一轮"要沿用面板上刚改的设置），否则用卷自己的
+     * （卷自己的配置含锁定快照）—— 判分口径永远跟着卷走，不按接收者本机的默认值算。 */
+    const cfg = o.cfg || QuizCore.resolveConfig(null, exam);
+    storeNs = DataCore.NS_GLOBAL;      // 题库里的卷 = 自己的卷，记录写全局空间
+    received = false;
+    tip.style.color = '';
+    const all = (exam.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+    if (!all.length) { tip.style.color = '#b42318'; tip.textContent = '这套卷里没有题目'; return { ok: false }; }
+    const picked = o.pick || null;
+    if (picked && !picked.questions.length) {
+      tip.style.color = '#b42318';
+      tip.textContent = '按当前设置这一轮抽到 0 题：' + (picked.meta && picked.meta.warn ? picked.meta.warn : '请检查抽题规则与题库构成');
+      showHome();                                     // 抽不到题就留在首页，把话说清楚
+      return { ok: false };
+    }
+    const qs = picked ? picked.questions : all;
+    const modeAll = !!(picked && picked.meta && picked.meta.mode === 'all');
+    const roundTag = o.roundTag || (picked ? (modeAll ? 'all' : 'pick') : 'all');
+    cancelFlash();                                  // 别让上一次的"已自动保存"把新提示语盖回去
+    tip.textContent = '已从题库载入《' + (exam.title || examId) + '》'
+      + (picked ? (modeAll ? ('· 全部作答 ' + qs.length + ' 题')
+                           : ('· 本轮按设置抽了 ' + qs.length + ' 题' + pickSummary(picked)))
+                : ('（整卷 ' + qs.length + ' 题）'));
+    if (picked && picked.meta && picked.meta.warn) tip.textContent += ' · 提示：' + picked.meta.warn;
+    await boot(exam.id, (exam.title || exam.id)
+               + (picked ? (modeAll ? ('（全部作答 ' + qs.length + ' 题）') : ('（抽一轮 ' + qs.length + ' 题）')) : ''),
+               qs, true, cfg, roundTag,
+               { title: exam.title || examId, count: qs.length, cfg: cfg });
+    return { ok: true, examId: exam.id, count: qs.length };
+  }
+
+  /* 抽题规则的可读摘要：按题型数量/总分时把"每型几题"写出来，供提示语与列表按钮用 */
+  function pickSummary(picked) {
+    const m = picked && picked.meta;
+    if (!m) return '';
+    const d = m.requestDetail || {};
+    if (d.byType) {
+      const parts = [];
+      ['单选', '多选', '判断', '简答'].forEach(function (t) { if (d.byType[t]) parts.push(t.slice(0, 1) + ' ' + d.byType[t]); });
+      return '（' + (parts.join(' · ') || '按设置') + '）';
+    }
+    if (d.byTypeScore) {
+      const parts = [];
+      ['单选', '多选', '判断', '简答'].forEach(function (t) { if (d.byTypeScore[t]) parts.push(t.slice(0, 1) + ' ' + d.byTypeScore[t] + '分'); });
+      return '（' + (parts.join(' · ') || '按设置') + '）';
+    }
+    if (m.mode === 'random') return '（完全随机 · ' + (m.basis === 'score' ? ('约 ' + (m.targetScore || 0) + ' 分') : ((d.count || 0) + ' 题')) + '）';
+    return '';
+  }
+  /* ---------- 「未作答优先」的档位表（用户要求："抽题可以选择随机或者未做答优先"） ----------
+   * 档位（数字越大越先抽，同档内仍然随机）：
+   *   2 = 错题本里**还欠着**的（没答对过，或连续错着 —— 含上一轮没作答/没答对的）
+   *   1 = **没进过本子**的（没做过，或一次就答对、从没错过）
+   *   0 = 进过本子、后来已经答对了的
+   * 数据只读**本机错题本**（不联网、不上传）；读不到就返回 null → core 退化成完全随机并如实提示。 */
+  let wrongTiers = null;
+  function preferOf(cfg) {
+    const p = (cfg && cfg.pick) || {};
+    return (p.prefer === 'unansweredFirst') ? 'unansweredFirst' : 'random';
+  }
+  async function loadWrongTiers(examId) {
+    try {
+      const got = await WrongCore.loadBook(makeStore(), examId);
+      const entries = (got && got.ok && got.book && got.book.entries) ? got.book.entries : {};
+      const map = {};
+      Object.keys(entries).forEach(function (k) {
+        const e = entries[k] || {};
+        const owed = ((e.rightTimes || 0) === 0) || ((e.streak || 0) > 0);
+        map[String(k)] = owed ? 2 : 0;
+      });
+      wrongTiers = map;
+      return map;
+    } catch (err) { wrongTiers = null; return null; }
+  }
+  /* 把档位摊到**这一份题库**上：本子里没有的题就是"没进过本子"= 1 */
+  function tierMapFor(questions, cfg) {
+    if (preferOf(cfg) !== 'unansweredFirst' || !wrongTiers) return null;
+    const map = {};
+    (questions || []).forEach(function (q) {
+      const v = wrongTiers[String(q.id)];
+      map[String(q.id)] = (v == null) ? 1 : v;
+    });
+    return map;
+  }
+  /* 用一份配置对某个题库抽一轮：返回 pickQuestions 的原始结果（含 meta.warn / 缺口） */
+  function drawRound(questions, cfg, seedOverride) {
+    const c = QuizCore.snapshotConfig(cfg || QuizCore.DEFAULT_CONFIG);
+    if (seedOverride != null) c.pick = Object.assign({}, c.pick, { seed: seedOverride });
+    const tiers = tierMapFor(questions, c);
+    return QuizCore.pickQuestions(questions, c, tiers ? { priority: tiers } : null);
+  }
+  /* 抽中的题 id 指纹 → 当轮次标记（同一批题共用一个进度键；换一批自然换一个键） */
+  function roundTagOf(picked) {
+    const ids = picked.questions.map(function (q) { return q.id; }).join(',');
+    let h = 0;
+    for (let i = 0; i < ids.length; i++) { h = ((h * 31) + ids.charCodeAt(i)) >>> 0; }
+    return 'p' + h.toString(36) + '-' + picked.questions.length;
+  }
+  /* 重开一轮（seedDelta=0 沿用当前设置里的种子；=1 表示「换一批」：种子 +1）
+   * ⚠ 设置从哪来：正在答题就用当前会话那份配置；已经回到首页就用上一轮记下的那份（roundCtx.cfg）。
+   *   ⚠ 抽题与分数线**不再**在答题界面里改（那个面板已把这两组排除）——
+   *     要改就回题库首页点「改设置再做一轮」，或对某套卷点「开始作答」。
+   *   seedDelta=0 且上一轮是"全部作答" → 直接把整套卷再挂上（进度自动恢复 = 「继续这一轮」）。 */
+  async function redrawRound(seedDelta) {
+    if (!roundCtx) { tip.style.color = '#b42318'; tip.textContent = '先从题库载入一套卷，才能重开一轮'; return { ok: false }; }
+    const store = makeStore();
+    let got = null;
+    try { got = await ExamsCore.getExam(store, roundCtx.examId); } catch (e) { got = null; }
+    if (!got || !got.ok) { tip.style.color = '#b42318'; tip.textContent = '这套卷读不出来了（可能已被删除）'; return { ok: false }; }
+    const base = QuizCore.snapshotConfig((view && view.session().config) || roundCtx.cfg || QuizCore.DEFAULT_CONFIG);
+    if (!seedDelta && roundCtx.roundTag === 'all') return bootFromLibrary(roundCtx.examId, { cfg: base });
+    const seed0 = (base.pick && typeof base.pick.seed === 'number') ? base.pick.seed : 1;
+    const seed = seed0 + (seedDelta || 0);
+    base.pick = Object.assign({}, base.pick, { seed: seed });
+    const all = (got.exam.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+    await loadWrongTiers(roundCtx.examId);       // 「再抽一次」也要按同一份档位抽
+    const picked = drawRound(all, base);
+    const isAll = !!(picked.meta && picked.meta.mode === 'all');
+    const r = await bootFromLibrary(roundCtx.examId,
+      { pick: picked, roundTag: isAll ? 'all' : roundTagOf(picked), cfg: base });
+    if (r && r.ok && seedDelta) { cancelFlash(); tip.textContent = '已换一批（种子 ' + seed + '）：' + tip.textContent; }
+    return r;
+  }
+  /* 「继续这一轮」= 同一份设置重来一次（同一批题 → 进度自动恢复） */
+  function resumeRound() { return redrawRound(0); }
+  /* 返回题库首页：先把没落盘的保存冲掉，再拆掉作答界面（这一轮的进度已经存在本机，回来能接着答） */
+  async function flushSave() {
+    if (!liveStore || !view) return;
+    if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
+    try { await liveStore.save(view.session(), { now: new Date().toISOString() }); } catch (e) { /* 存不上不影响返回首页 */ }
+  }
+  /* ---------- 「返回题库」的二级确认（用户要求） ----------
+   * 那颗按钮是**常驻**的（左下角浮动），误触一下就把作答界面收走 —— 所以点它先问一句。
+   * 用同一个 DeleteDialog（标题/取消文案由询问模型给，默认值不变），并把**这一轮的真实进度**
+   * 写进去（已答几题 / 还有几题没答），让人清楚"回去会不会丢东西"。
+   * 「继续作答」= 取消，留在这一轮；「返回题库」= 走原来的 goHome（进度存在本机）。 */
+  let homeDialog = null;
+  function askGoHome() {
+    if (homeDialog) { homeDialog.destroy(); homeDialog = null; }
+    if (!view) { return goHome(); }                  // 没有在答的一轮（理论上按钮也不可见）：直接回
+    let msg = '这一轮的进度存在本机：返回后点「继续这一轮」就能接着答。';
+    try {
+      const st = A_progress(view.session());
+      msg = '这一轮已答 ' + st.answered + ' / ' + st.total + ' 题'
+        + (st.unanswered ? '（还有 ' + st.unanswered + ' 题没答）' : '（已答完）')
+        + '。返回后进度存在本机，点「继续这一轮」就能接着答。';
+    } catch (e) { /* 读不到进度就用上面那句通用说明 */ }
+    homeDialog = DeleteDialog.mount({
+      container: host.parentNode || host,
+      prompt: {
+        title: '返回题库？',
+        message: msg,
+        note: '卷子与你的作答都还在本机，什么都没删。',
+        cancelLabel: '继续作答',
+        options: [{ policy: 'back', label: '返回题库', detail: '回到题库首页（进度留着，回来接着答）' }]
+      },
+      onChoose: function () {
+        if (homeDialog) { homeDialog.destroy(); homeDialog = null; }
+        goHome();
+      },
+      onCancel: function () {
+        if (homeDialog) { homeDialog.destroy(); homeDialog = null; }
+        tip.style.color = '';
+        tip.textContent = '已取消：留在这一轮接着答';
+      }
+    });
+    return { ok: true };
+  }
+  async function goHome() {
+    /* ⚠ 回主页前把**当前这一轮的设置**记进 roundCtx：面板是作答界面的一部分，回了主页就没了；
+     *   不记的话，"在答题时改过展示时机/作答行为 → 回主页 → 继续这一轮"会按**旧设置**重开（实测踩过）。
+     *   （抽题与分数线不在答题面板里了，但它们同样在这份 cfg 里，一起记回去没坏处。） */
+    if (view && roundCtx) {
+      try { roundCtx.cfg = QuizCore.snapshotConfig(view.session().config); } catch (e) { /* 读不到就用原来那份 */ }
+      try { roundCtx.count = view.session().questions.length; } catch (e) { /* ignore */ }
+    }
+    await flushSave();
+    if (view && view.destroy) view.destroy();
+    view = null;
+    window.__attempt = null;              // 供自检/取证读："现在没有在进行中的作答"
+    host.textContent = '';
+    cancelFlash();
+    tip.style.color = '';
+    showHome();
+    tip.textContent = roundCtx
+      ? '已返回题库：上一轮的进度存在本机，点「继续这一轮」接着答'
+      : '从下面的题库选一套卷开始';
+  }
+  /* 内置样卷：以前是一进页面就自动加载的，现在改成首页底部的一个按钮 */
+  async function loadSample() {
+    try {
+      const p = await QuizParser.parseDocx(b64ToBuf(SAMPLE_B64));
+      const qs = questionsOf(p);
+      storeNs = DataCore.NS_GLOBAL;
+      received = false;
+      cancelFlash();
+      tip.textContent = '已载入内置样卷（' + qs.length + ' 题，其中有待校对项）';
+      await boot('sample.docx', '内置样卷（' + qs.length + ' 题）', qs, true, QuizCore.DEFAULT_CONFIG, 'all',
+                 { title: '内置样卷', count: qs.length, cfg: QuizCore.DEFAULT_CONFIG });
+    } catch (e) { tip.textContent = '样卷解析失败：' + (e && e.message || e); }
+  }
+  /* 切到答题页时把首页刷一遍（导入面板刚入库的卷要能立刻看到）。
+   * 正在答题就不动它 —— 别把作答界面顶掉；等用户「返回题库」时自然会重画。 */
+  window.__answerRefresh = function () { if (!view) paintLibrary(); };
+  /* 合并版「导入 / 校对」入库成功后可以直接把卷塞过来（app-template 的 __answerLoadExam 调它） */
+  window.__answerBoot = function (examId) { return bootFromLibrary(examId); };
+
+  async function boot(examId, title, questions, allowResume, cfgIn, roundTag, ctxIn) {
+    /* 分享文件自带出题者的配置（含 configLocked）→ 判分口径跟着卷走，不按接收者本机的默认值算 */
+    const config = cfgIn || QuizCore.DEFAULT_CONFIG;
+    const session = AttemptCore.createSession({
+      examId: examId, title: title, questions: questions, config: config,
+      startedAt: new Date().toISOString()
+    });
+    /* ⚠ 进度键带轮次标记：同一套卷的"整卷"与"抽一轮（这一批题）"各存各的，
+     *   否则两者会互相判为"进度不适用"并**覆盖掉对方**。 */
+    liveStore = AttemptCore.createProgressStore(makeStore(), { examId: examId, roundTag: roundTag });
+    const cx = ctxIn || {};
+    roundCtx = { examId: examId, title: cx.title || title, count: cx.count || questions.length,
+                 cfg: cx.cfg || config, roundTag: roundTag == null ? null : roundTag };
+    roundSeq++;                                        // 换了一轮：上一轮未落盘的"已自动保存"提示不要再冒出来
+    libPanel.className = 'libpick hidden';              // 开始答题 → 收起首页
+    showHomeChrome(true);
+
+    /* 启动即恢复：同一套卷子才有得恢复（卷变了会明确拒绝并从头开始） */
+    if (allowResume) {
+      const got = await liveStore.load(questions);
+      if (got.ok) {
+        const r = AttemptCore.restoreProgress(session, got.payload);
+        if (r.ok) {
+          const st = A_progress(session);
+          cancelFlash();
+          tip.textContent = '已恢复上次进度：已答 ' + st.answered + ' / ' + st.total + ' 题，继续第 ' + (st.index + 1) + ' 题';
+        }
+      } else if (got.reason && got.reason !== 'empty') {
+        cancelFlash();
+        tip.textContent = got.message || '上次的进度不适用，已从新一轮开始';
+      }
+      if (got.notice) { cancelFlash(); tip.textContent = got.notice; }
+    }
+
+    host.textContent = '';
+    view = AttemptView.mount({
+      container: host, session: session,
+      onChange: function () { save(); },
+      onFinish: function (summary) { clearProgress(); collectWrong(summary); mountReview(summary, session); },
+      /* 交卷之后那颗「再考一张」（用户要求）：**按当前这一轮的设置换一批题**再开一轮。
+       *   走的就是首页「换一批」那条路（seedDelta=1 → 种子 +1 → 抽到另一批题）；
+       *   完全随机/按题型抽都会换题；「全部作答」那种规则本来就不抽题，等于原题重做一遍。
+       *   想换**另一张卷**就点顶栏那颗「返回题库」。 */
+      onRestart: function () { return redrawRound(1); }
+    });
+    window.__attempt = view;
+  }
+  /* 首页/答题两种形态的切换（返回题库按钮 + 启动时默认落在首页） */
+  function showHome() {
+    libPanel.className = 'libpick';
+    showHomeChrome(false);
+    paintLibrary();
+  }
+  if (homeBtn) homeBtn.addEventListener('click', function () { askGoHome(); });
+  /* 「重新生成试卷」：按**当前这一轮的设置**换一批题（种子 +1）——就是首页那颗「换一批」同一条路。
+   * 上一轮已答的进度按各自轮次指纹存在本机，不会被抹掉（同一个种子再抽一次就能回到那一批）。 */
+  if (redrawBtn) redrawBtn.addEventListener('click', function () { redrawRound(1); });
+
+  /* 交卷后挂"整卷点评"面板（**要点一次才发请求**：先弹消耗确认，确认后才调 AI） */
+  let reviewPanel = null;
+  function mountReview(summary, session) {
+    if (reviewPanel) { reviewPanel.destroy(); reviewPanel = null; }
+    const box = document.getElementById('aireview');
+    box.classList.remove('hidden');
+    box.innerHTML = '';
+    reviewPanel = AiScene.mountReview({
+      container: box,
+      keyStore: AiCore.openKeyStore(window.localStorage),
+      /* 填 Key 只保留一处（用户要求）：合并版去「导入 / 校对」页填；独立单页版没有那一页 → 就地展开。
+       * ⚠ 判据用**真窗口文档**：合并版里 `document` 是作用域化的，只在答题面板内部找，
+       *   页签在面板外，用它永远判成"独立版"（这个坑刚在错题本那边踩过）。 */
+      keyHint: (function () {
+        try {
+          return (typeof window !== 'undefined' && window.document && window.document.getElementById('tab-review'))
+            ? '填 / 换 Key 去「导入 / 校对」页顶部那颗「AI 密钥与供应商」' : null;
+        } catch (e) { return null; }
+      })(),
+      summary: summary,
+      questions: session.questions,
+      answers: session.answers,                 // 结算的 per 里没有"你答了什么"，必须单独带上
+      onResult: function (res) {
+        tip.textContent = res.ok ? '已生成整卷总评（引用了本轮记录）'
+          : (res.needConfirm ? tip.textContent : ('总评没生成：' + (res.errors || []).join('；')));
+      }
+    });
+    tip.textContent = '已交卷。想做整卷点评就点下面的「生成整卷总评」（会先弹消耗确认）。';
+  }
+  /* 交卷 → 自动把误答收进这套卷的错题本（并累加次数） */
+  async function collectWrong(summary) {
+    try {
+      const byId = {}; view.session().questions.forEach(function (q) { byId[q.id] = q; });
+      const r = await WrongCore.collectToStore(makeStore(), {
+        examId: view.session().examId,
+        results: (summary && summary.per) || (view.session().summary || {}).per || [],
+        now: new Date().toISOString(),
+        sessionAt: view.session().finishedAt || new Date().toISOString(),
+        questionsById: byId, answers: view.session().answers
+      });
+      if (!r.ok) { tip.textContent = '错题本没能更新：' + (r.message || r.reason || ''); return; }
+      if (r.skipped) { tip.textContent = '已交卷（这一轮的错题之前已经收过了）'; return; }
+      tip.textContent = '已交卷：错题本 ' + r.stats.total + ' 条（本轮新增 ' + r.added.length
+        + '、累加 ' + r.incremented.length + '、纠正 ' + r.mastered.length + '）'
+        + (r.persisted ? '' : '（存储不可用，这次只在内存里）');
+    } catch (e) { tip.textContent = '错题本更新失败：' + (e && e.message || e); }
+  }
+  function A_progress(s) { return AttemptCore.progress(s); }
+
+  /* 每次作答/改参数后存一次（做得轻：只写用户产生的那部分） */
+  let saveTimer = null;
+  /* 存上了给一句轻提示（1.6 秒后复原）——不然用户不知道"到底存没存"；存不上则由下面的降级提示接管 */
+  let flashTimer = null, tipBase = '';
+  /* 换卷/重开一轮时先把待恢复的 flash 撤掉：否则"已自动保存"的定时器到点会把
+   * 刚写上去的新提示语**盖回旧文案**（实测：页面头部写着"抽一轮 9 题"、提示语还停在"整卷 240 题"）。 */
+  function cancelFlash() {
+    if (flashTimer) { clearTimeout(flashTimer); flashTimer = null; }
+  }
+  function flash(msg, color) {
+    if (!flashTimer) tipBase = tip.textContent;
+    tip.style.color = color || '#0f5132';
+    tip.textContent = msg;
+    if (flashTimer) clearTimeout(flashTimer);
+    flashTimer = setTimeout(function () { flashTimer = null; tip.style.color = ''; tip.textContent = tipBase; }, 1600);
+  }
+  function save() {
+    if (!liveStore || !view) return;
+    if (saveTimer) clearTimeout(saveTimer);
+    const seq = roundSeq;                    // 记下"这次保存属于哪一轮"
+    saveTimer = setTimeout(async function () {
+      saveTimer = null;
+      const r = await liveStore.save(view.session(), { now: new Date().toISOString() });
+      if (r.degraded) {
+        tip.textContent = r.notice;                      // ★ 存储不可用时的提示（降级但不影响答题）
+        tip.style.color = '#b42318';
+      } else if (seq === roundSeq) {
+        /* ⚠ 换卷/重开一轮之后**不要**再报"已自动保存"：那属于上一轮，
+         *   报了会把刚写上去的"本轮抽了 9 题"顶掉（实测踩过：标题是 9 题、提示语还在说整卷）。 */
+        flash('已自动保存（只在你本机）');
+      }
+    }, 120);
+  }
+  async function clearProgress() {
+    if (!liveStore) return;
+    const r = await liveStore.clear();                   // 交卷后清理，不留脏数据
+    tip.textContent = r.degraded ? '已交卷（进度只在内存里，刷新后本轮记录就没了）' : '已交卷，临时进度已清理';
+  }
+
+  /* 载荷读出来的结果：**必须留在面板作用域上**，不能塞进 startFromPayload 里 ——
+   * 早先那版就是塞进去的，结果 paintLibrary 里那句 `if (EMBEDDED && …)` 直接
+   * `ReferenceError: EMBEDDED is not defined`（异步报错：页面看着还能用，只是"打包了多套卷"
+   * 那一段永远不出现、首页的"清除答题记录"也画不出来）。启动自检的顶部细条就是靠这条逮住它的。 */
+  let EMBEDDED = null;
+  let PAYLOAD_BAD = null;                 // 有载荷块但读不出来（改坏/截断/被转码）→ 必须**说清楚**，不许悄悄落回空题库
+
+  /* 启动：**先看这份文件有没有自带试卷**（别人导出的单文件就靠这一步"打开即加载"）→
+   *       没有就落在**题库首页**（不再默认加载内置样卷）。
+   *
+   * ⚠⚠ 这一段**必须等 DOM 解析完**才能读（所以包成函数、由下面 whenParsed 调度）：
+   *   导出器把载荷块插在 `</body>` 之前，也就是**插在本段脚本的后头**。脚本按解析顺序执行，
+   *   跑在这里时 `documentElement.outerHTML` 里根本还没有那个块 —— 于是"自带试卷"永远读不到，
+   *   收件人打开分享文件只会看到一个**空题库首页**（用户报障原话：「导出时带的试卷在其他浏览器
+   *   打开看不了」）。出题者本机看不出来，因为他自己的浏览器里题库本来就有那套卷。 */
+  function startFromPayload() {
+  try {
+    const srcHtml = document.documentElement.outerHTML;
+    const det = DataCore.extractPayloadDetailed(srcHtml);
+    if (det && det.ok) EMBEDDED = det.payload;
+    else if (det && det.reason !== 'no-payload') PAYLOAD_BAD = det;
+    else {
+      /* 连"完整的载荷块"都没找到：只有当确实有个**没闭合的**载荷块时才算坏文件 ——
+       * 否则就是普通的本机应用文件（本来就没有载荷），那是正常情况。 */
+      const cnt = DataCore.payloadBlockCount(srcHtml);
+      if (cnt && cnt.blocks > cnt.complete) {
+        PAYLOAD_BAD = { reason: 'truncated', message: '载荷块没闭合（文件像是被截断了）' };
+      }
+    }
+  } catch (e) { PAYLOAD_BAD = { reason: 'threw', message: (e && e.message) || String(e) }; }
+  const e0 = (EMBEDDED && EMBEDDED.exams && EMBEDDED.exams.length) ? EMBEDDED.exams[0] : null;
+  const eQs = e0 ? (e0.questions || []).map(function (q) { return SchemaCore.createQuestion(q); }) : [];
+  /* 卷 id 会成为**命名空间名**，所以先挡住"含分隔符"的脏 id（否则 createStore 会大声抛错，页面直接白）。
+   * 这类文件不是坏就是被改过 —— fail-closed 拒绝载入，比"用半个命名空间跑起来"强。 */
+  const badId = e0 ? String(e0.id == null ? '' : e0.id).indexOf(DataCore.NS_SEP) >= 0 : false;
+  if (eQs.length && !badId) {
+    /* **接收者隔离**：别人分享来的卷 → 记录只写 recv_<卷id>.<内容指纹>，绝不碰出题者本机的 app 空间。
+     * 为什么还要指纹：卷 id 会撞名（两个人可能都叫 `题库.docx`）—— 只按 id 建空间会把两份文件混在一起。 */
+    storeNs = DataCore.receiverNamespaceFor(e0);
+    received = true;
+    tip.textContent = '这份文件自带试卷：' + (e0.title || e0.id) + '（' + eQs.length + ' 题）· 记录只写本机空间 ' + storeNs;
+    boot(e0.id, e0.title || e0.id, eQs, true, QuizCore.resolveConfig(QuizCore.DEFAULT_CONFIG, e0));
+  } else if (badId) {
+    tip.style.color = '#b42318';
+    tip.textContent = '这份文件里的试卷 ID 不合法（含命名空间分隔符），已拒绝载入';
+    host.textContent = '分享文件里的试卷 ID 不合法，无法建立隔离空间；请让出题者重新导出。';
+    showHome();
+  } else if (PAYLOAD_BAD) {
+    /* 别人发来的分享文件坏了 —— **必须当面说清**。
+     * 以前这里是"读不出来就当没有载荷"，于是默默回到空题库首页：用户看到的是一个能用的题库、
+     * 里面却没有那套卷，只能得出"打开了但看不了"的结论，出题者也无从查（线上就踩过这个）。 */
+    const why = { 'bad-json': '试卷数据被改坏了（多发生在聊天软件转存 / 另存为 / 转码之后）',
+                  truncated: '文件没传完整（载荷块被截断）',
+                  threw: '读取时出错' }[PAYLOAD_BAD.reason] || '读不出来';
+    showHome();                      // ⚠ 先落首页再写提示：首页那一下会重画面板，写在前面会被盖掉
+    tip.style.color = '#b42318';
+    tip.textContent = '⚠ 这份分享文件里的试卷' + why + '：' + PAYLOAD_BAD.message
+      + ' —— 已回到题库首页。请让出题者「导出分享」后重新发一次（用"文件"方式发送，别用聊天软件的转存 / 另存为）。';
+  } else {
+    /* ✅ 默认落在题库首页：这里**不**再自动解析内置样卷（用户明确要求"不要默认展示内置题库"）。
+     *    想用样卷 → 首页底部那个「载入内置样卷」按钮。 */
+    const noQ = !!e0;
+    showHome();
+    if (noQ) tip.textContent = '这份文件自带的试卷里没有题目，已回到题库首页';
+  }
+  }
+  /* 「解析完了再跑」——`window.document` 而不是作用域里的 document：合并壳把这个名字换成了面板代理，
+   *   而 readyState / DOMContentLoaded 问的是**整份文档**。 */
+  (function whenParsed() {
+    const real = (typeof window !== 'undefined' && window.document) ? window.document : null;
+    if (real && real.readyState === 'loading') real.addEventListener('DOMContentLoaded', startFromPayload);
+    else startFromPayload();
+  })();
+
+  /* 导出为**独立单文件**：壳（SHELL）+ 这道卷的脱敏载荷 → Blob → 落盘。
+   * 闸门三道全在库里（脱敏白名单 / 敏感扫描 / 外部引用自查），这里只负责取状态与提示。
+   * ⚠ 合并版把导出统一搬到了页签那排的「导出分享」（那里先选卷再打包），所以**那个壳里没有这个元素** ——
+   *   一律先查再绑（独立版 答题页.html 仍用这条路径）。 */
+  if (exportBtn) exportBtn.addEventListener('click', async function () {
+    if (!view) { tip.textContent = '还没载入题目，暂时没有可导出的卷子'; return; }
+    try {
+      const s = view.session();
+      const state = {
+        exams: [{ id: s.examId, title: s.title, config: s.config, configLocked: true, questions: s.questions }]
+      };
+      /* 你保存在本机的 AI 密钥也当"来源机密"送进扫描：万一它被粘进了题干，导出会被拦下（而不是跟着文件走） */
+      let secrets = [];
+      try { secrets = await AiCore.allKeys(AiCore.openKeyStore(window.localStorage)); } catch (e) { secrets = []; }
+      const r = DataCore.exportStandalone(state, SHELL, { examId: s.examId, at: new Date().toISOString(), secrets: secrets });
+      if (!r.ok) { tip.style.color = '#b42318'; tip.textContent = '没法导出：' + r.message; return; }
+      const d = DataCore.downloadHtml(r.html, r.filename);
+      tip.style.color = d.ok ? '#0f5132' : '#b42318';
+      tip.textContent = d.ok
+        ? ('已导出 ' + d.filename + '（' + Math.round(d.bytes / 1024) + ' KB）：单个文件，双击即离线作答'
+           + (received ? '（这份是从分享文件打开的，可以继续转给别人）' : ''))
+        : ('导出没能落盘：' + d.message);
+    } catch (e) { tip.style.color = '#b42318'; tip.textContent = '导出出错：' + ((e && e.message) || e); }
+  });
+
+  /* ⚠ 拖入 / 选择文件换题这一整块**已经删掉**了（不是注释掉）：
+   *   用户要求"把直接拖入文件的功能整合到导入的页面里" ⇒ 答题页不再有拖入区，
+   *   于是这块代码在**任何**产物里都没有元素可挂（合并版 #ansDrop/#ansFile 不存在，
+   *   独立版 答题页.html 也同步去掉了那块标记）。留着一堆永远不执行的 `if (el)` 只会误导后来人。
+   *   换题入口统一走：顶栏「返回题库」→ 导入 / 校对（拖入区在那里）。
+   *   这条"标记与逻辑必须对得上"的规矩由 verify/shell-parity.test.js 守着。 */
+
+})();
+</script>
+</body></html>

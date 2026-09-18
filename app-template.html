@@ -1,0 +1,804 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>答题全能版 · 离线单文件</title>
+<script>
+/* ============================================================
+ *  启动自检（**必须排在整份文件最前面**，而且只能是 ES5 写法）
+ *
+ *  为什么要有它：这份文件经常被拷到手机上、用**别的浏览器**打开。那个浏览器要是太旧
+ *  （或者文件在传输里被聊天软件改坏、截断），页面就**一片白**——用户只能看到白屏，
+ *  没法说清哪儿错了，出题者也就无从修。
+ *  这段代码是全文唯一"老引擎也保证能跑"的部分：只要它跑起来了，后面任何一段脚本
+ *  解析失败 / 抛异常，都会在这块红条里用中文写清楚，还配一个「复制诊断信息」按钮。
+ *
+ *  判定两条，都不误伤正常启动：
+ *    ① DOM 就绪 1.2 秒后 `window.__quizBooted` 仍是 false → 应用没起来 → 铺开红条；
+ *       之后每 0.5 秒复查一次（老手机慢，真起来了就自己把红条摘掉，最多查 20 秒）。
+ *    ② 应用起来了但记录到脚本异常 → 只在顶部挂一条细提示（不挡内容，可关掉）。
+ * ============================================================ */
+(function () {
+  var win = window;
+  var rec = [];
+  var diag = { errors: rec, booted: false };
+  win.__quizDiag = diag;
+  function push(msg) { if (msg && rec.length < 8) rec.push(String(msg)); }
+  win.addEventListener('error', function (ev) {
+    var t = ev && ev.target;
+    if (t && t !== win && t.tagName) { push('资源加载失败：' + t.tagName); return; }
+    push('脚本报错：' + ((ev && ev.message) || (ev.error && ev.error.message) || '未知'));
+  }, true);
+  win.addEventListener('unhandledrejection', function (ev) {
+    var r = ev && ev.reason;
+    push('异步报错：' + ((r && r.message) || r || '未知'));
+  });
+  function info() {
+    var me = (win.location && win.location.href) || '';
+    me = me.split('#')[0].split('?')[0].split('/').pop() || '(未知)';   // 只留文件名：别把整条本机路径泄露出去
+    return '文件名：' + decodeURIComponent(me)
+      + '\n浏览器：' + ((win.navigator && win.navigator.userAgent) || '(未知)')
+      + '\n启动结果：' + (win.__quizBooted ? '成功' : '失败')
+      + (rec.length ? '\n错误：\n- ' + rec.join('\n- ') : '\n错误：无');
+  }
+  function mkBtn(text, style, fn) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = text;
+    b.setAttribute('style', 'min-height:40px;padding:0 14px;margin:0 8px 0 0;font:inherit;border-radius:8px;' + style);
+    b.onclick = fn;
+    return b;
+  }
+  function build(full) {
+    var box = document.createElement('div');
+    box.setAttribute('data-boot-diag', full ? 'full' : 'thin');
+    box.setAttribute('style', 'position:fixed;left:0;right:0;top:0;z-index:2147483647;background:#fff;color:#111;'
+      + 'font:14px/1.6 system-ui,-apple-system,"Microsoft YaHei",sans-serif;padding:12px 14px;overflow:auto;'
+      + 'max-height:100%;' + (full ? 'border-bottom:3px solid #b42318;box-shadow:0 8px 22px rgba(0,0,0,.28)'
+                                    : 'border-bottom:2px solid #b45309;box-shadow:0 4px 12px rgba(0,0,0,.16)'));
+    var h = document.createElement('div');
+    h.setAttribute('style', 'font-weight:700;margin:0 0 6px;color:' + (full ? '#b42318' : '#b45309'));
+    h.textContent = full ? '这份文件没能在当前浏览器里启动' : '本页有脚本报错（个别功能可能不好使）';
+    box.appendChild(h);
+    var p = document.createElement('div');
+    p.textContent = full
+      ? '常见的两种原因：浏览器太旧（有些手机自带的"HTML 查看器"根本不支持）；或者文件在传输中被改坏了。'
+        + '可以照着试：① 换 Chrome / Edge / Safari 打开；② 先用「文件」方式重新发一次、存到手机里再打开，'
+        + '别在聊天软件里直接点；③ 把下面这段信息复制给出题者。'
+      : '把下面这段信息复制给出题者，就能定位问题。';
+    box.appendChild(p);
+    var pre = document.createElement('pre');
+    pre.setAttribute('style', 'white-space:pre-wrap;word-break:break-all;background:#f6f7f9;border:1px solid #dfe3e8;'
+      + 'border-radius:8px;padding:8px;margin:8px 0;font:12px/1.5 ui-monospace,Consolas,monospace');
+    pre.textContent = info();
+    box.appendChild(pre);
+    box.appendChild(mkBtn('复制诊断信息', 'border:1px solid #b42318;color:#b42318;background:#fff', function () {
+      var ta = document.createElement('textarea');
+      ta.value = info();
+      ta.setAttribute('style', 'position:fixed;left:-9999px;top:0');
+      document.body.appendChild(ta);
+      ta.select();
+      var copied = false;
+      try { copied = document.execCommand('copy'); } catch (e) { copied = false; }
+      try { document.body.removeChild(ta); } catch (e2) { /* 摘不掉也不影响 */ }
+      this.textContent = copied ? '已复制' : '请长按上面的信息手动复制';
+    }));
+    box.appendChild(mkBtn(full ? '关掉这块' : '知道了', 'border:1px solid #dfe3e8;color:#111;background:#f6f7f9', function () {
+      diag.closed = true;              // 用户明确关掉了 → 后面不许再自己弹回来（否则每 0.5 秒重挂一次，很烦）
+      try { box.parentNode.removeChild(box); } catch (e) { /* 已经摘掉了 */ }
+    }));
+    return box;
+  }
+  var shown = null;
+  function show(full) {
+    if (shown && shown.getAttribute('data-boot-diag') === (full ? 'full' : 'thin')) return;
+    if (shown && shown.parentNode) shown.parentNode.removeChild(shown);
+    shown = build(full);
+    (document.body || document.documentElement).appendChild(shown);
+  }
+  function check() {
+    if (win.__quizDiag && win.__quizDiag.closed) return;
+    var ok = !!win.__quizBooted;
+    if (!ok) show(true);                                  // 没起来：铺开红条
+    else if (rec.length) show(false);                     // 起来了但报过错：细提示
+    return ok;
+  }
+  function start() {
+    var tries = 0;
+    /* 刻意**不提前停**：启动成功了也要继续盯一会儿 —— 启动后才炸的脚本（点按钮就抛）同样要能被看见。 */
+    var t = setInterval(function () {
+      tries++;
+      check();
+      if (tries > 40) clearInterval(t);                   // 最多盯 20 秒，之后不再打扰
+    }, 500);
+    check();
+  }
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', function () { setTimeout(start, 1200); });
+  } else {
+    setTimeout(start, 1200);
+  }
+})();
+</script>
+<style>
+  :root{--bg:#eef0f4;--card:#fff;--line:#dfe3e8;--fg:#1b1b1f;--dim:#6b7280;--key:#2b6cb0}
+  *{box-sizing:border-box}
+  html,body{margin:0;max-width:100%;overflow-x:hidden;overflow-x:clip}
+  body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 12px;position:sticky;top:0;z-index:5}
+  .top .wrap{max-width:820px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  /* 顶栏右侧的动作位（返回题库 / 导出为独立 HTML 被搬到这里）：靠右、可换行 */
+  .topacts{margin-left:auto;display:inline-flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .topacts:empty{display:none}
+  .tabs{display:flex;flex-wrap:wrap;gap:6px;max-width:820px;margin:8px auto 0}
+  .tab{min-height:44px;padding:0 14px;border:1px solid var(--line);background:#f6f7f9;border-radius:10px;cursor:pointer;font:inherit}
+  .tab[aria-selected="true"]{background:var(--key);border-color:var(--key);color:#fff;font-weight:600}
+  /* 「导出分享」与三个页签同一排（用户要求）；它不是页签，用主色描出来区分 */
+  .tab-act{border-color:var(--key);color:var(--key);font-weight:600}
+  /* 手机端：**页签那一排也可折叠**（用户要求）—— 折起来只留一颗「当前页名 ▾」。
+   * 用户后续又提了两条，都在下面这段里：
+   *   ① **收起之后是悬浮的**（`position:fixed` 右上角），不再占页面上那一排的位置；
+   *   ② 点页签跳转之后**不再自动收起**（用户要求）—— 收不收由用户点那颗按钮决定，
+   *      想看当前页名 / 再换一页都不用重新展开一遍。
+   * 展开时才回到正常流里占一排（那正是用户在"挑页签"的时刻，需要看得清、点得中）。宽屏不折（页签一直摆着）。 */
+  .tabs-toggle{display:none}
+  @media (max-width:819px){
+    .tabs-toggle{display:inline-flex;align-items:center;justify-content:center}
+    .tabsrow:not(.open) .tabs{display:none}
+    /* 收起态：整块悬浮在右上角，脱离文档流（不占位置、不再把正文往下推） */
+    .tabsrow:not(.open){position:fixed;top:8px;right:10px;left:auto;z-index:55;margin:0;padding:0;
+      background:transparent;border:0;box-shadow:none;width:auto}
+    .tabsrow:not(.open) .tabs-toggle{box-shadow:0 2px 10px rgba(15,17,21,.18);background:rgba(255,255,255,.96)}
+  }
+  /* 导出分享页：整页浮层（手机端也要能滚、按钮 ≥44px） */
+  .sharepage{position:fixed;inset:0;z-index:60;background:rgba(15,17,21,.45);overflow:auto;padding:12px}
+  .share-card{max-width:820px;margin:0 auto;background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px}
+  .share-hd{display:flex;align-items:center;gap:8px;font-weight:600;margin:0 0 8px}
+  .share-list{display:flex;flex-direction:column;gap:6px;margin:0 0 10px}
+  .share-row{display:flex;align-items:center;gap:10px;border:1px solid var(--line);border-radius:10px;padding:6px 10px;min-height:44px}
+  .share-row .t{flex:1 1 auto;min-width:0;overflow-wrap:anywhere}
+  .share-row .m{color:var(--dim);font-size:13px;white-space:nowrap}
+  .share-row input{width:22px;height:22px;min-width:22px}
+  .share-acts{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .share-acts .grow{flex:1 1 40px}
+  .share-out{margin:10px 0 0}
+  .share-save{display:inline-flex;align-items:center;min-height:44px;margin:8px 0 0;padding:0 14px;border:1px solid var(--key);
+        border-radius:10px;background:#eef3ff;color:var(--key);font-weight:600;text-decoration:none}
+  /* 「须知」整页浮层：复用 .sharepage / .share-card 那套（同一个"整页说明页"的观感） */
+  .help-body{font-size:14.5px;line-height:1.7}
+  .help-h{margin:14px 0 4px;font-size:15px;font-weight:600}
+  .help-h:first-child{margin-top:2px}
+  .help-ol,.help-ul{margin:0 0 6px;padding-left:22px}
+  .help-ol li,.help-ul li{margin:2px 0}
+  .help-credits{margin-top:14px;padding-top:10px;border-top:1px solid var(--line);color:var(--dim);font-size:13px;line-height:1.7}
+  .help-credits a{color:var(--key);overflow-wrap:anywhere}
+  .help-sign{margin-top:8px;color:var(--dim);font-size:13px}
+  /* 「返回题库」的底部固定位：左下角，与右下角的「交卷」FAB 同一层（z-index:45）。
+   * 用户后来要求把「重新生成试卷」放到它旁边 → 这里排成一行（可换行）。
+   * ⚠ 宽度**必须给上限**：两颗按钮并排 ~230px，加上右下角那颗「交卷」FAB（~96px）在 375 的屏上
+   *   会互相压住。所以限制总宽并允许换行 —— 换成两行时也在左下角往上长，不碰 FAB。 */
+  /* ⚠ 这两颗贴在最底下（`bottom:14px`），**手机上会被系统手势条 / 浏览器自己的底栏压住** ——
+   *   用户报「答题时找不到返回首页的按钮」，最可能就是这个：真机上那一条不是页面画的，量不到。
+   *   所以统一**抬起来**：安全区（`viewport-fit=cover` 下才有值的 `env(safe-area-inset-bottom)`）
+   *   + 一点固定余量；先写不带 env() 的普通值兜底（老浏览器不认 env() 时整条声明会被丢掉）。 */
+  .bottomslot{position:fixed;left:14px;bottom:22px;bottom:calc(env(safe-area-inset-bottom, 0px) + 22px);
+    z-index:45;display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    max-width:calc(100vw - 132px)}
+  .bottomslot:empty{display:none}
+  .pane{max-width:820px;margin:0 auto;padding:10px 12px 24px}
+  /* 电脑端把内容区放宽：一屏能多放内容（作答界面据此进两栏，解析不会把动作条顶走）。
+     顶部条与页签跟着一起放宽，免得内容宽了、标题还挤在中间那一小条里。 */
+  @media (min-width:1100px){
+    .pane,.top .wrap,.tabs{max-width:1080px}
+  }
+  .pane[hidden]{display:none}
+  .big{min-height:44px;padding:0 14px;border:1px solid var(--line);background:#f6f7f9;border-radius:10px;cursor:pointer;font:inherit}
+  .drop{border:1px dashed #b9c0c8;border-radius:10px;padding:8px 10px;font-size:13px;color:var(--dim);
+        display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:44px}
+  .drop.on{background:#e8f0fb;border-color:var(--key)}
+  .tip{font-size:13px;color:var(--dim)}
+  /* 答完一页最底下的那行小字提示（原来在顶部，用户要求搬到底部声明上边） */
+  .ansfootrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:8px 0 0}
+  .ansfootrow:empty{display:none}
+  /* 给底部两条固定栏留出的空行：**只在答题时**出现（根元素上挂 .answering，见 answer-template） */
+  .footspace{display:none}
+  .answering .footspace{display:block;height:76px}
+  .msg{font-size:14px;padding:8px 10px;border-radius:8px;background:#eef2f7;margin:8px 0}
+  .msg.ok{background:#e9f7ee;color:#0f5132}
+  .msg.bad{background:#fdecea;color:#b42318}
+  .hidden{display:none}
+  /* 工具栏折叠（**只在手机端**）：导入 / 校对页那一排"载入样卷 / 选文件 / 拖入区 / AI 三个按钮"
+   * 在 375px 下要占四行、把正文推到屏幕外面去，所以窄屏默认折起来，一颗「工具」按钮展开。
+   * 宽屏**不折**（用户之前明确要求过"工具不折叠"）：`.tools-toggle` 只在窄屏显示。 */
+  .toolsrow{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .tools-toggle{display:none}
+  .tools-body{display:flex;flex-wrap:wrap;align-items:center;gap:8px;flex:1 1 240px;min-width:0}
+  @media (max-width:819px){
+    .tools-toggle{display:inline-flex;align-items:center;justify-content:center}
+    .toolsrow:not(.open) .tools-body{display:none}
+  }
+  .out{white-space:pre-wrap;word-break:break-word;background:#0f1115;color:#d7dbe0;border-radius:10px;padding:10px;font-size:13px;max-height:340px;overflow:auto}
+  .foot{max-width:820px;margin:0 auto;padding:10px 12px 24px;color:var(--dim);font-size:13px}
+  input[type=file]{min-height:44px}
+  label.file{display:inline-flex;align-items:center;min-height:44px;padding:0 14px;border:1px solid var(--line);border-radius:10px;background:#f6f7f9;cursor:pointer;font:inherit}
+</style>
+</head>
+<body>
+<noscript><p style="margin:0;padding:14px;background:#fff;color:#b42318;font:15px/1.7 system-ui,sans-serif;border-bottom:3px solid #b42318">这份试卷要靠 JavaScript 才能作答，而当前浏览器把脚本关掉了（有些手机自带的「HTML 查看器」压根不跑脚本，只看得到一片白）。请换 Chrome / Edge / Safari 打开本文件；也可以在浏览器设置里打开「JavaScript」后再刷新。</p></noscript>
+<div class="top">
+  <div class="wrap">
+    <span class="topacts" id="ansTopActs"></span>
+  </div>
+  <div class="tabsrow" id="tabsRow">
+    <button class="big tabs-toggle" type="button" id="tabsToggle"
+            aria-expanded="false" aria-controls="tabsBar"
+            title="展开页签：答题 / 导入 校对 / 错题本 / 导出分享 / 须知">展开 ▾</button>
+    <div class="tabs" id="tabsBar" role="tablist">
+      <button class="tab" id="tab-answer" role="tab" aria-selected="true" data-tab="answer">答题</button>
+      <button class="tab" id="tab-review" role="tab" aria-selected="false" data-tab="review">导入 / 校对</button>
+      <button class="tab" id="tab-wrong" role="tab" aria-selected="false" data-tab="wrong">错题本</button>
+      <button class="tab tab-act" type="button" id="tab-share">导出分享</button>
+      <button class="tab tab-act" type="button" id="tab-help">须知</button>
+    </div>
+  </div>
+</div>
+
+<section class="pane" id="pane-answer" role="tabpanel">
+  <button class="big" id="ansHome" hidden>返回题库</button>
+  <button class="big" id="ansRedraw" hidden>重新生成试卷</button>
+  <span id="ansWarn" style="display:none;color:#b42318;font-size:12.5px;line-height:1.5;display:block"></span>
+  <div id="ansHost"></div>
+  <div id="ansReview" class="hidden"></div>
+  <div class="ansfootrow"><span class="tip" id="ansTip">从下面的题库选一套卷开始</span></div>
+</section>
+
+<section class="pane" id="pane-review" role="tabpanel" hidden>
+  <div class="toolsrow" id="revTools">
+    <button class="big tools-toggle" type="button" id="revToolsToggle"
+            aria-expanded="false" aria-controls="revToolsBody">工具 ▾</button>
+    <div class="tools-body" id="revToolsBody">
+      <button class="big" id="revDemo">载入内置样卷</button>
+      <button class="big" id="revClear">清空</button>
+      <label class="file" for="revFile">选择 .docx / .txt</label>
+      <input type="file" id="revFile" accept=".docx,.txt,.md" style="display:none">
+      <label class="drop" id="revDrop">把 .docx / .txt 拖到这里（也可以点这里选文件）</label>
+      <button class="big" type="button" id="revAikey">AI 密钥与供应商</button>
+      <button class="big" type="button" id="revAibatch">生成解析</button>
+    </div>
+  </div>
+  <div id="revMsg" class="msg hidden"></div>
+  <div id="revStage"></div>
+  <pre class="out" id="revOut">（入库后这里显示导出的 JSON）</pre>
+  <div id="revBatchhost"></div>
+  <div id="revAihost"></div>
+</section>
+
+<section class="pane" id="pane-wrong" role="tabpanel" hidden>
+  <div class="wrap" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px">
+    <span class="tip" id="wrongTip">按试卷分组</span>
+    <button class="big" id="wrongBack" style="display:none">返回错题列表</button>
+  </div>
+  <div id="wrongHost"></div>
+  <div id="wrongAi" class="hidden"></div>
+</section>
+
+<div class="foot">
+  <span id="footMore">使用说明、全部声明与作者信息都在顶部「须知」里。</span>
+</div>
+
+<div id="ansFootSpace" class="footspace"></div>
+
+<div id="ansBottomSlot" class="bottomslot"></div>
+
+<div id="sharePage" class="sharepage hidden" role="dialog" aria-modal="true" aria-label="导出分享">
+  <div class="share-card">
+    <div class="share-hd"><span class="grow">导出分享 · 选择要一并打包的试卷</span></div>
+    <div id="shareList" class="share-list"></div>
+    <div class="share-acts">
+      <button class="big" type="button" id="shareAll">全选</button>
+      <button class="big" type="button" id="shareNone">全不选</button>
+      <span class="grow"></span>
+      <button class="big" type="button" id="shareCancel">取消</button>
+      <button class="big tab-act" type="button" id="shareGo">导出分享</button>
+    </div>
+    <div id="shareOut" class="share-out"></div>
+  </div>
+</div>
+
+<div id="helpPage" class="sharepage hidden" role="dialog" aria-modal="true" aria-label="须知">
+  <div class="share-card help-card">
+    <div class="share-hd"><span class="grow">须知 · 使用说明与声明</span>
+      <button class="big" type="button" id="helpClose">关闭</button></div>
+    <div class="help-body">
+      <h3 class="help-h">怎么用（三步）</h3>
+      <ol class="help-ol">
+        <li>先在「导入 / 校对」页把题库弄进来：点「选择 .docx / .txt」或把文件拖进虚线框；校对完点「确认入库」。</li>
+        <li>回到「答题」页，点某套卷的「开始作答」——先出现「答卷前设置」，挑好抽题规则、题量与分数线再开始。</li>
+        <li>做完点右下角「交卷」看成绩单与解析；答错的题会自动进「错题本」，可以逐题回看、跳回原卷。</li>
+      </ol>
+      <h3 class="help-h">常用按钮</h3>
+      <ul class="help-ul">
+        <li>左下角「返回题库」：回题库首页（会先问一句，作答进度留在本机）。</li>
+        <li>左下角「重新生成试卷」：按当前设置换一批题再开一轮（上一轮的进度不会被覆盖）。</li>
+        <li>底部「展开设置 / 收起设置」：改判分与翻页行为（改完下一题就按新设置走）。</li>
+        <li>顶部「导出分享」：选几套卷打包成一个离线单文件发给别人，双击就能作答。</li>
+      </ul>
+      <h3 class="help-h">声明与警告</h3>
+      <ul class="help-ul">
+        <li><b>数据只存你本机</b>（浏览器 localStorage）。没有服务器、没有埋点、没有遥测；换浏览器或清缓存会丢，重要题库请用「导出分享」留一份文件。</li>
+        <li><b>只有 AI 功能需要联网</b>（调用你自己配置的模型服务商）；其余功能全程离线可用。</li>
+        <li><b>AI 密钥只存本机</b>独立命名空间，不上传、不随分享文件导出，界面上只显示遮罩。填一次就在「导入 / 校对」页顶部那颗「AI 密钥与供应商」里。</li>
+        <li><b>分享文件只带试卷</b>：不含你的作答记录、成绩、错题本与密钥；接收者的记录写进独立的 recv 空间，和出题者互不干扰。</li>
+        <li><b>下载可能被拦</b>：手机浏览器常拦自动下载，这时点结果框里那条「点这里保存文件」链接即可存下。</li>
+        <li><b>删除不可恢复</b>：删除试卷时会让选「连作答记录与错题一起删」还是「只删卷本体」，选了就照做。</li>
+        <li><b>存储不可用或写满</b>：页面顶部会用红字给出原因与建议；那种情况下记录可能只留在内存里，刷新会丢。</li>
+        <li><b>判分口径</b>：多选默认「少选给 2 分、错选 0 分」；简答按采分关键词命中率；判断题认 √ / × 与 对 / 错。答案键缺失或没法自动判分的题会明确标注，不会静默给 0。</li>
+        <li><b>内容自负</b>：题库与解析由你导入或由 AI 生成，请自行核对；AI 生成的内容可能有错，以你的教材与老师为准。</li>
+      </ul>
+      <h3 class="help-h">提意见与获取更新</h3>
+      <ul class="help-ul">
+        <li><b>欢迎发邮件提意见</b>：<span id="helpMail">liyi07@outlook.com</span> ——
+          用着别扭、有 bug、想要什么功能，都直接发过来；写清"你点的是什么、看到什么、期望什么"最好复现，我会照着改。</li>
+        <li><b>获取更新</b>：打开项目仓库
+          <a href="https://github.com/kokuraasahidesu/review_quiz" target="_blank" rel="noreferrer">github.com/kokuraasahidesu/review_quiz</a>
+          ——点 <b>Watch</b> 收更新通知、点 <b>Star</b> 收藏；新版本与修复都发在这里（也可以直接下载仓库里的
+          <code>review_quiz.html</code>，那永远是最新的单文件版本）。</li>
+      </ul>
+      <div class="help-credits">
+        <div>GitHub 主页：<a href="https://github.com/kokuraasahidesu" target="_blank" rel="noreferrer">github.com/kokuraasahidesu</a></div>
+        <div>项目仓库：<a href="https://github.com/kokuraasahidesu/review_quiz" target="_blank" rel="noreferrer">github.com/kokuraasahidesu/review_quiz</a></div>
+        <div>邮箱：<span id="helpMail2">liyi07@outlook.com</span></div>
+      </div>
+      <div class="help-sign" id="helpSign">由北京理工大学 2625 李佳祎使用 DeepSeek V4.1 Flash 和亲爱的一百块钱制作</div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============ 「须知」整页说明（用户要求）============
+ * 诉求：最上面那一栏加一项「须知」按钮，把**所有声明与警告**都收进来，再写一份简易使用说明，
+ * 下面用小字挂 GitHub 主页 / 项目仓库 / 邮箱，最下面写制作署名。
+ *
+ * 为什么单独做成一整页浮层（而不是塞进页签）：它是**读一次就关**的东西，
+ * 不该跟"答题 / 导入 / 错题本"抢同一排的位置；复用「导出分享」那套 `.sharepage` 观感，
+ * 手机上同样能滚、按钮 ≥44px。声明文案**只在这里写一份**，页脚只留署名与一句"见须知"。 */
+(function helpPage() {
+  const page = document.getElementById('helpPage');
+  const btn = document.getElementById('tab-help');
+  const closeEl = document.getElementById('helpClose');
+  if (!page || !btn) return;
+  function open() {
+    page.classList.remove('hidden');
+    /* 窄屏：点开之后把页签那排收起来（免得浮层上面还压着一排按钮）——
+     * ⚠ 只在这一处替用户收起（用户明确要求过"点页签跳转之后不要自动收起"，那是另一回事）。 */
+    const row = document.getElementById('tabsRow');
+    if (row && row.classList && row.classList.remove) row.classList.remove('open');
+    if (typeof appTabsSync === 'function') appTabsSync();
+    const card = page.querySelector ? page.querySelector('.help-card') : null;
+    if (card && card.scrollIntoView) { try { card.scrollIntoView({ block: 'start' }); } catch (e) { /* ignore */ } }
+  }
+  function close() { page.classList.add('hidden'); }
+  btn.addEventListener('click', open);
+  if (closeEl) closeEl.addEventListener('click', close);
+  /* 点遮罩空白处 = 关闭（和导出分享页一致；点卡片内部不关） */
+  page.addEventListener('click', function (ev) {
+    if (ev && ev.target === page) close();
+  });
+  window.__help = { open: open, close: close, isOpen: function () { return !page.classList.contains('hidden'); } };
+})();
+
+/* ========== 内联：解析核心（顺序不可颠倒！） ========== */
+__ZIP_CORE__
+__DOCX_CORE__
+__TEXT_CORE__
+__SEGMENT_CORE__
+__PARSER_CORE__
+/* ========== 内联：结构 / 存储 / 计分 / 流程 / 误答本 / 卷册 ========== */
+__SCHEMA_CORE__
+__DATA_CORE__
+__QUIZ_CORE__
+__FLOW_CORE__
+__WRONG_CORE__
+__EXAMS_CORE__
+__TEXT_FORMAT_CORE__
+__REVIEW_CORE__
+__REVIEW_UI__
+/* ========== 内联：快捷面板 + 作答界面 + 错题本视图 + 删卷弹窗 ========== */
+__QUICK_UI__
+__ATTEMPT_CORE__
+__ATTEMPT_VIEW__
+__WRONG_VIEW__
+__DELETE_DIALOG__
+/* ========== 内联：AI（密钥 / 单题 / 场景） ========== */
+__AI_CORE__
+__AI_SETTINGS__
+__AI_SINGLE__
+__AI_SCENE__
+/* ========== 内置样卷（三个面板共用一份，不重复内联） ========== */
+const SHARED_SAMPLE_B64 = "__SAMPLE_B64__";
+__TXT_FIXTURES__
+
+/* ============================================================
+ *  合并壳：三个面板各自跑**原页面那段逻辑**，谁也不复制谁
+ *
+ *  为什么能这么干：三个页面（答题 / 校对 / 错题本）的页面脚本都是"照着页面里的元素 id 干活"，
+ *  所以只要给每个面板一个**作用域化的 document** —— `getElementById`/`querySelector` 都重定向到
+ *  本面板内部，并把 `#id` 按 idMap 换成带前缀的全局唯一 id —— 同一份逻辑就能在三个面板里各跑一遍。
+ *  好处：单一真相源（改一次三个地方都对），合并版不会变成"复制三份后各自腐烂"。
+ *  陷阱（都踩过）：① 同一份文档里 id 不能重（所以有 idMap + 唯一性自检）；
+ *                ② `createElement` 必须用**真的** document（元素得属于主文档）；
+ *                ③ 面板切走再切回要能刷新（错题本面板必须重新读盘，否则刚交的卷看不到）。
+ * ============================================================ */
+const APP_PANES = {
+  answer: document.getElementById('pane-answer'),
+  review: document.getElementById('pane-review'),
+  wrong: document.getElementById('pane-wrong')
+};
+/* 把 `#old` 这种 id 选择器换成面板内的真实 id */
+function mapSelector(sel, idMap) {
+  return String(sel).replace(/#([A-Za-z0-9_-]+)/g, function (m, name) {
+    return '#' + ((idMap && idMap[name]) || name);
+  });
+}
+/* 作用域化的 document：查元素落回本面板，建元素仍用主文档 */
+function scopedDoc(pane, idMap) {
+  return {
+    documentElement: document.documentElement,
+    body: document.body,
+    createElement: function (t) { return document.createElement(t); },
+    createTextNode: function (t) { return document.createTextNode(t); },
+    getElementById: function (id) { return pane.querySelector('#' + ((idMap && idMap[id]) || id)); },
+    querySelector: function (s) { return pane.querySelector(mapSelector(s, idMap)); },
+    querySelectorAll: function (s) { return pane.querySelectorAll(mapSelector(s, idMap)); },
+    addEventListener: function () { return document.addEventListener.apply(document, arguments); },
+    removeEventListener: function () { return document.removeEventListener.apply(document, arguments); }
+  };
+}
+/* 让一段**原样**的页面逻辑在本面板里跑起来 */
+function RUN_PANE(paneKey, idMap, fn) {
+  const pane = APP_PANES[paneKey];
+  if (!pane) throw new Error('合并壳：找不到面板 ' + paneKey);
+  return fn(scopedDoc(pane, idMap));
+}
+/* 页签切换：切到错题本时**重新读盘**（否则刚交卷收进来的错题看不见） */
+let appTab = 'answer';
+/* 手机端页签折叠按钮的"同步文案"钩子：在 showTab 之后才挂上（这里先声明，避免 TDZ 让 typeof 抛错） */
+var appTabsSync = null;
+function showTab(key) {
+  if (!APP_PANES[key]) return;
+  appTab = key;
+  Object.keys(APP_PANES).forEach(function (k) {
+    APP_PANES[k].hidden = (k !== key);
+    const t = document.getElementById('tab-' + k);
+    if (t) t.setAttribute('aria-selected', k === key ? 'true' : 'false');
+  });
+  if (key === 'wrong' && typeof window.__wrongRefresh === 'function') window.__wrongRefresh();
+  if (key === 'review' && typeof window.__reviewRefresh === 'function') window.__reviewRefresh();
+  /* 切回答题页时刷新「从题库选题（N）」上的套数：刚在导入面板入库的卷要能立刻看到 */
+  if (key === 'answer' && typeof window.__answerRefresh === 'function') window.__answerRefresh();
+  /* 手机端的折叠按钮上写着「当前页名 ▾」——换页就得跟着改（宽屏那颗按钮是 display:none，改了也看不见） */
+  if (typeof appTabsSync === 'function') { try { appTabsSync(); } catch (e) { /* ignore */ } }
+  /* 切到答题面板就把题目带到眼前（不然页签切过来停在顶部，看不见题干） */
+  if (key === 'answer') {
+    try {
+      const h = document.getElementById('ansHost');
+      if (h && h.scrollIntoView) h.scrollIntoView({ block: 'start' });
+    } catch (e) { /* 不支持 scrollIntoView 的老环境忽略即可 */ }
+  }
+}
+Object.keys(APP_PANES).forEach(function (k) {
+  const t = document.getElementById('tab-' + k);
+  if (t) t.addEventListener('click', function () { showTab(k); });
+});
+
+/* ============ 面板一：答题（原 answer-template 的页面逻辑） ============ */
+RUN_PANE('answer', { host: 'ansHost', srcTip: 'ansTip',
+                     btnHome: 'ansHome', btnRedraw: 'ansRedraw', storeWarn: 'ansWarn', aireview: 'ansReview' }, function (document) {
+__PAGE_ANSWER__
+});
+
+/* ============ 面板二：导入 / 校对（原 review-template 的页面逻辑） ============ */
+RUN_PANE('review', { msg: 'revMsg', stage: 'revStage', out: 'revOut', demo: 'revDemo', clear: 'revClear',
+                     file: 'revFile', drop: 'revDrop',
+                     aikey: 'revAikey', aibatch: 'revAibatch',
+                     batchhost: 'revBatchhost', aihost: 'revAihost' }, function (document) {
+__PAGE_REVIEW__
+});
+
+/* ============ 面板三：错题本（原 wrong-template 的页面逻辑） ============ */
+RUN_PANE('wrong', { host: 'wrongHost', tip: 'wrongTip', back: 'wrongBack', aimistake: 'wrongAi' }, function (document) {
+__PAGE_WRONG__
+});
+
+/* 跨面板动作：把题库里某套卷直接挂到答题面板（导入面板入库成功后用它做「去答题」）。
+ *   · `__answerBoot` 由答题面板的页面逻辑定义（按 examId 读卷 + 建会话）；
+ *   · 这里只负责"切页签 + 转交"，不重复实现任何逻辑。
+ * 两个钩子都可能不存在（比如独立单页版），所以一律先查再调。 */
+window.__answerLoadExam = function (examId) {
+  if (typeof window.__answerBoot !== 'function') return false;
+  showTab('answer');
+  try { window.__answerBoot(examId); } catch (e) { /* ignore：答题面板自己会提示 */ }
+  return true;
+};
+
+/* ============ 顶栏瘦身（用户要求）：把「返回题库」放到底部栏 ============
+ * 诉求原文："剩下的返回题库功能放到底部栏"。它在 pane 里会**另占一行**，放到底部固定位之后：
+ *   · 只**搬节点**，不改 id、不重新绑监听 —— 答题面板那边 `hidden` 的切换一个字不用改；
+ *   · 与右下角的「交卷」FAB 一左一右，都在 z-index:45 这一层（能盖住底部快捷面板的标题行）；
+ *   · 底部快捷面板展开时它会浮在面板之上（和交卷按钮同样的层），不会点不到。
+ * ⚠ 用户后续要求：「重新生成试卷」（原「再抽一次」）**放到「返回题库」旁边** ——
+ *   所以这两颗一起搬，顺序就是它们在 pane 里的先后（返回题库 → 重新生成试卷）。 */
+(function moveAnswerActions() {
+  try {
+    const slot = document.getElementById('ansBottomSlot');
+    const home = document.getElementById('ansHome');
+    const redraw = document.getElementById('ansRedraw');
+    if (!slot || !home) return;
+    slot.appendChild(home);
+    if (redraw) slot.appendChild(redraw);       // 紧挨着「返回题库」（同一个固定栏里并排）
+  } catch (e) { /* 搬不动就当没这回事：按钮留在原处，功能不受影响 */ }
+})();
+
+/* ============ 手机端：**页签那一排也可折叠**（用户要求："让这一排再手机端 ui 可折叠"）============
+ * 折起来只留一颗「展开 ▾」的小按钮，点开才铺出整排（宽屏那颗按钮 display:none，页签一直摆着）。
+ * ⚠ 用户后续明确要求：
+ *   ① **点页签跳转之后不要自动收起** —— 所以这里只更新按钮文案，绝不替用户把那一排收起来；
+ *   ② **收起时按钮写「展开 ▾」**（早先写的是"当前页名 ▾"，用户要求改成动作词：一眼知道点它会展开）；
+ *   ③ **在首页（题库首页）时自动切到展开模式** —— 首页本来就是来挑页签/挑卷的，那一排该摆着；
+ *      由答题面板在"回到首页"时调 `window.__tabsExpand()` 触发（见 answer-template 的 showHomeChrome）。
+ *   窄屏收起时那一块是**悬浮**的（见上面 CSS 的 `.tabsrow:not(.open)`），所以"开着"也不占位负担。 */
+(function tabsRow() {
+  const row = document.getElementById('tabsRow');
+  const btn = document.getElementById('tabsToggle');
+  const bar = document.getElementById('tabsBar');
+  if (!row || !btn || !bar) return;
+  const isOpen = function () { return !!(row.classList && row.classList.contains('open')); };
+  const setOpen = function (on) {
+    if (!row.classList || !row.classList.toggle) return;
+    row.classList.toggle('open', !!on);
+    appTabsSync();
+  };
+  appTabsSync = function () {
+    const open = isOpen();
+    btn.textContent = open ? '收起 ▴' : '展开 ▾';
+    btn.setAttribute('aria-expanded', String(open));
+  };
+  /* 首页自动展开用的钩子：**只展开、不收起**（"什么时候收起"只由用户那颗按钮决定）。
+   * 独立单页版没有这一排 → 那边 typeof 判断后才调。 */
+  window.__tabsExpand = function () { if (!isOpen()) setOpen(true); };
+  btn.addEventListener('click', function () {
+    if (row.classList && row.classList.toggle) row.classList.toggle('open');
+    appTabsSync();
+  });
+  /* 点页签 / 点「导出分享」→ **只同步按钮文案**，不收起。
+   * 这一段以前有 `row.classList.remove('open')`：那正是用户说的"点击跳转之后自动收起"，已删。 */
+  bar.addEventListener('click', function (ev) {
+    const t = ev && ev.target;
+    if (!t || !t.closest) return;
+    appTabsSync();
+  });
+  appTabsSync();
+  /* 一进来就铺开那一排（用户要求："在首页时自动切换为展开模式"）。
+   * ⚠ 这里**不能只靠"回到首页"那一下**：**分享文件是直接落在作答界面的**（自带载荷 → 打开即答题），
+   *   永远不经过首页 —— 收件人一进来只会看到右上角一颗「展开 ▾」，找不到回首页/换页的路
+   *   （用户报障原话："这个bug是我手机用导出分享之后的文件打开才有的"）。所以启动就铺开；
+   *   之后收不收只由用户那颗按钮决定（点页签跳转依旧不会自动收起）。 */
+  setOpen(true);
+})();
+
+/* 手机端工具栏折叠：宽屏那颗按钮是 display:none（工具一直摆着，用户要求过"工具不折叠"），
+ * 窄屏才露出「工具 ▾」，点一下展开 / 收起。纯 CSS 管显隐，这里只翻 .open 与按钮文案。 */
+(function () {
+  const row = document.getElementById('revTools');
+  const btn = document.getElementById('revToolsToggle');
+  if (!row || !btn) return;
+  const sync = function () {
+    const open = !!(row.classList && row.classList.contains('open'));
+    btn.textContent = open ? '收起工具 ▴' : '工具 ▾';
+    btn.setAttribute('aria-expanded', String(open));
+  };
+  btn.addEventListener('click', function () {
+    if (row.classList && row.classList.toggle) row.classList.toggle('open');
+    sync();
+  });
+  sync();
+})();
+
+/* 合并壳的"导出壳"：**在任何面板挂载之前**抓一次原始 HTML。
+ * 运行时的页面带着一堆挂载残留（题库列表、作答界面、面板宿主），抓它等于把"上一次的作答界面"打包。 */
+const APP_SHELL = document.documentElement.outerHTML;
+
+/* ============ 「导出分享」页（用户要求）============
+ * 诉求原文："导出为独立 html 按钮在手机端不好使……这个按钮和答题/导入/错题本放在一排，
+ *   名字改为导出分享，功能上点击后应该现有一个页面可以选择一并打包的试卷，然后导出成功有文本框提示"。
+ *
+ * 三条关键设计：
+ *   ① **进那一排**：按钮就是页签那排的 `#tab-share`（`.tab-act` 用主色描出来，但它不是页签）。
+ *   ② **先选卷**：这一页列题库里的卷（多选、默认全选），可全选 / 全不选，底部「导出分享」。
+ *   ③ **手机端能落盘**：点「导出分享」那一下**必须同步**触发下载 —— 手机浏览器（尤其 Safari）
+ *      会认为 `await` 之后已经不是用户手势，从而把下载静默拦掉（桌面端没这问题，所以只在手机上报"不好使"）。
+ *      所以卷本体与 AI 密钥都在**打开这一页时**先异步取好缓存，点击处理函数里一行 await 都没有；
+ *      结果框里另放一个**真链接**（`<a download href=blob:…>`）兜底：自动下载被拦时，用户点它就能存
+ *      （真手指点真链接，任何手机都认）。
+ * ================================================ */
+(function sharePage() {
+  const page = document.getElementById('sharePage');
+  const btn = document.getElementById('tab-share');
+  const listEl = document.getElementById('shareList');
+  const outEl = document.getElementById('shareOut');
+  const goEl = document.getElementById('shareGo');
+  const allEl = document.getElementById('shareAll');
+  const noneEl = document.getElementById('shareNone');
+  const cancelEl = document.getElementById('shareCancel');
+  if (!page || !btn || !listEl || !outEl || !goEl) return;
+
+  const SHELL = APP_SHELL;
+  let rows = [];            // [{ id, title, exam, total, checked }]
+  let secrets = [];         // 预取的 AI 密钥（当"来源机密"参与敏感扫描）
+  let lastUrl = null;       // 上一次导出的 blob URL（换一次导出 / 关页面时回收）
+
+  const setHidden = function (n, on) {
+    if (!n) return;
+    if (on) n.classList.add('hidden'); else n.classList.remove('hidden');
+  };
+  const revoke = function () {
+    if (!lastUrl) return;
+    try { URL.revokeObjectURL(lastUrl); } catch (e) { /* 回收失败不影响交付 */ }
+    lastUrl = null;
+  };
+  const picked = function () { return rows.filter(function (r) { return r.checked; }); };
+  const pickedQuestions = function () {
+    return picked().reduce(function (s, r) { return s + (r.total || 0); }, 0);
+  };
+
+  function paintSummary() {
+    const n = picked().length;
+    goEl.textContent = n ? ('导出分享（' + n + ' 套 / ' + pickedQuestions() + ' 题）') : '导出分享（还没选卷）';
+    goEl.disabled = (n === 0);
+  }
+  function paintList() {
+    listEl.textContent = '';
+    if (!rows.length) {
+      const empty = document.createElement('div');
+      empty.className = 'tip';
+      empty.textContent = '题库里还没有卷子：先去「导入 / 校对」导一份并「确认入库」，再回来导出。';
+      listEl.appendChild(empty);
+      paintSummary();
+      return;
+    }
+    rows.forEach(function (r) {
+      const row = document.createElement('label');
+      row.className = 'share-row';
+      const cb = document.createElement('input');
+      cb.type = 'checkbox';
+      cb.checked = !!r.checked;
+      cb.setAttribute('data-share-id', r.id);
+      cb.addEventListener('change', function () { r.checked = !!cb.checked; paintSummary(); });
+      const t = document.createElement('span');
+      t.className = 't';
+      t.textContent = '《' + r.title + '》';
+      const m = document.createElement('span');
+      m.className = 'm';
+      m.textContent = (r.total || 0) + ' 题';
+      row.appendChild(cb); row.appendChild(t); row.appendChild(m);
+      listEl.appendChild(row);
+    });
+    paintSummary();
+  }
+  /* 结果**文本框**（用户要求）：成功绿框、失败红框；能手动保存时再挂一个真链接 */
+  function showOut(text, kind, href, filename) {
+    outEl.textContent = '';
+    const box = document.createElement('div');
+    box.className = 'msg ' + (kind === 'err' ? 'bad' : 'ok');
+    box.setAttribute('data-share', 'result');
+    box.textContent = text;
+    outEl.appendChild(box);
+    if (href) {
+      const a = document.createElement('a');
+      a.className = 'share-save';
+      a.href = href;
+      a.download = filename || 'share.html';
+      a.setAttribute('data-share', 'save');
+      a.textContent = '没自动保存？点这里保存文件';
+      outEl.appendChild(a);
+      const hint = document.createElement('div');
+      hint.className = 'tip';
+      hint.style.marginTop = '6px';
+      hint.textContent = '手机上如果没弹出保存框，点上面那颗按钮即可；文件存到「下载」里，双击就能离线作答。';
+      outEl.appendChild(hint);
+    }
+  }
+
+  function open() {
+    revoke();
+    setHidden(page, false);
+    outEl.textContent = '';
+    listEl.textContent = '';
+    const loading = document.createElement('div');
+    loading.className = 'tip';
+    loading.textContent = '正在读题库…';
+    listEl.appendChild(loading);
+    paintSummary();
+    /* 预取：卷本体（含题目）+ AI 密钥 —— 都在这时候取好，点「导出分享」时才能同步发下载 */
+    const finish = function () { paintList(); };
+    let store = null;
+    try { store = DataCore.createStore({ small: window.localStorage, large: null, namespace: DataCore.NS_GLOBAL }); } catch (e) { store = null; }
+    Promise.resolve().then(async function () {
+      rows = [];
+      try {
+        const r = store ? await ExamsCore.listExams(store, { limit: 200 }) : null;
+        if (r && r.ok) {
+          for (const m of r.exams) {
+            const got = await ExamsCore.getExam(store, m.id);
+            if (got && got.ok) {
+              rows.push({ id: m.id, title: got.exam.title || m.title || m.id, exam: got.exam,
+                          total: (got.exam.questions || []).length, checked: true });
+            }
+          }
+        }
+      } catch (e) { rows = []; }
+      try { secrets = await AiCore.allKeys(AiCore.openKeyStore(window.localStorage)); } catch (e) { secrets = []; }
+      finish();
+    });
+  }
+  function close() {
+    setHidden(page, true);
+    revoke();
+    outEl.textContent = '';
+  }
+
+  btn.addEventListener('click', function () { open(); });
+  if (cancelEl) cancelEl.addEventListener('click', close);
+  if (allEl) allEl.addEventListener('click', function () { rows.forEach(function (r) { r.checked = true; }); paintList(); });
+  if (noneEl) noneEl.addEventListener('click', function () { rows.forEach(function (r) { r.checked = false; }); paintList(); });
+
+  /* ⚠ 这个处理函数里**不许出现 await**（见上面第 ③ 条）：一次同步走完"取状态 → 打包 → 触发下载"。 */
+  goEl.addEventListener('click', function () {
+    const sel = picked();
+    if (!sel.length) { showOut('还没选卷：至少勾一套。', 'err'); return; }
+    try {
+      revoke();
+      const state = { exams: sel.map(function (r) { return r.exam; }) };
+      const at = new Date().toISOString();
+      const r = DataCore.exportStandalone(state, SHELL, {
+        examIds: sel.map(function (x) { return x.id; }), at: at, secrets: secrets
+      });
+      if (!r.ok) { showOut('没法导出：' + r.message, 'err'); return; }
+      /* 先自己引一次 blob URL：自动下载与结果框里的兜底链接共用它（关页面 / 再导一次才回收） */
+      let href = null;
+      try { href = URL.createObjectURL(new Blob([r.html], { type: 'text/html;charset=utf-8' })); } catch (e) { href = null; }
+      const d = DataCore.downloadHtml(r.html, r.filename);
+      lastUrl = href;
+      const kb = Math.round((d.bytes || r.bytes || 0) / 1024);
+      const names = sel.map(function (x) { return '《' + x.title + '》'; }).join('、');
+      showOut('导出成功：' + r.filename + '（' + kb + ' KB，' + sel.length + ' 套 / ' + pickedQuestions() + ' 题）\n'
+        + '打包了：' + names + '\n'
+        + '这是一份离线单文件：双击即作答，不需要网络、也不用安装任何东西；可以继续转给别人。\n'
+        + '（手机上打开：先存到手机里，再用「文件管理」选浏览器打开；聊天软件里直接点常被拦，只会看到一片白。）'
+        + (d.ok ? '' : '\n（浏览器没有自动保存：' + d.message + '；请用下面的按钮手动保存）'),
+        d.ok ? 'ok' : 'err', href, r.filename);
+    } catch (e) {
+      showOut('导出出错：' + ((e && e.message) || e), 'err');
+    }
+  });
+})();
+
+/* 启动：如果这份文件本身就是"别人分享来的"（自带载荷），直接切到答题面板 —— 它的逻辑会读载荷并出题。
+ * ⚠ 必须**等 DOM 解析完**：载荷块被插在 `</body>` 之前（也就是这段脚本后头），脚本当下执行时
+ *   `documentElement.outerHTML` 里还没有它 —— 这就是"分享文件打开后没试卷"的根因之一。 */
+(function () {
+  function bootShell() {
+    let hasPayload = false;
+    try { const p = DataCore.extractPayload(document.documentElement.outerHTML);
+          hasPayload = !!(p && p.exams && p.exams.length); } catch (e) { hasPayload = false; }
+    /* ⚠ 这里**不再**往顶栏写"这份文件自带试卷…"：那行简介小字按用户要求删了；
+     *   答题面板自己会写 #ansTip（带卷名/题数/落盘空间），信息更全。 */
+    if (hasPayload) showTab('answer');
+    /* 启动自检（文件最前面那段 ES5）认这个旗子：跑到这里说明壳活下来了，别再铺红条。
+     * 刻意放在 showTab 之后 —— 它抛错也要算"没启动"，红条才拦得住真正的白屏。 */
+    window.__quizBooted = true;
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bootShell);
+  else bootShell();
+})();
+</script>
+</body></html>

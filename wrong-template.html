@@ -1,0 +1,297 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>错题本 · 离线单文件</title>
+<style>
+  :root{--bg:#eef0f4;--card:#fff;--line:#dfe3e8;--fg:#1b1b1f;--dim:#6b7280;--key:#2b6cb0}
+  *{box-sizing:border-box}
+  html,body{margin:0;max-width:100%;overflow-x:hidden;overflow-x:clip}
+  body{background:var(--bg);color:var(--fg);font:16px/1.6 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif}
+  .top{background:var(--card);border-bottom:1px solid var(--line);padding:10px 12px;position:sticky;top:0;z-index:5}
+  .top .wrap{max-width:780px;margin:0 auto;display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+  .top h1{font-size:16px;margin:0;flex:1 1 140px;min-width:0}
+  .top .tip{font-size:13px;color:var(--dim)}
+  .big{min-height:44px;padding:0 14px;border:1px solid var(--line);background:#f6f7f9;border-radius:10px;cursor:pointer;font:inherit}
+  #host{background:var(--card);min-height:60vh}
+  .foot{max-width:780px;margin:0 auto;padding:10px 12px 24px;color:var(--dim);font-size:13px}
+</style>
+</head>
+<body>
+<div class="top"><div class="wrap">
+  <h1>错题本（离线 · 单文件）</h1>
+  <span class="tip" id="tip">按试卷分组</span>
+  <button class="big" id="back" style="display:none">返回错题列表</button>
+</div></div>
+
+<div id="host"></div>
+<div id="aimistake" class="hidden" style="max-width:780px;margin:0 auto;padding:0 12px 10px"></div>
+<div class="foot">
+  错题在交卷时自动收进来。点一条看原题与解析，点「跳到这道题」回到原卷。
+</div>
+
+<script>
+/* ========== 内联：解析核心（顺序不可颠倒！） ========== */
+__ZIP_CORE__
+__DOCX_CORE__
+__TEXT_CORE__
+__SEGMENT_CORE__
+__PARSER_CORE__
+/* ========== 内联：结构 / 存储 / 计分 / 流程 / 误答本 ========== */
+__SCHEMA_CORE__
+__DATA_CORE__
+__QUIZ_CORE__
+__FLOW_CORE__
+__WRONG_CORE__
+/* ========== 内联：卷册（要按卷 id 取回试卷） ========== */
+__EXAMS_CORE__
+__TEXT_FORMAT_CORE__
+/* ========== 内联：快捷面板 + 作答界面 + 错题本视图 ========== */
+__QUICK_UI__
+__ATTEMPT_CORE__
+__ATTEMPT_VIEW__
+__WRONG_VIEW__
+/* ========== 内联：删卷级联询问弹窗（F 节 / 本页删除按钮用） ========== */
+__DELETE_DIALOG__
+/* ========== 内联：AI（密钥 + 举一反三） ========== */
+__AI_CORE__
+/* 密钥设置面板：错题本的「举一反三」要能**就地填 Key**（用户报障："没有输入 api key 的地方"），
+ * 所以这一页也把它内联进来（顺序必须在 AI_SCENE 之前）。 */
+__AI_SETTINGS__
+__AI_SCENE__
+/* ========== 内联：内置样卷（没有本地数据时给一份可玩的示例） ========== */
+const SAMPLE_B64 = "__SAMPLE_B64__";
+
+(function () {
+  const host = document.getElementById('host');
+  const tip = document.getElementById('tip');
+  const backBtn = document.getElementById('back');
+  let wrongView = null, attemptView = null, dialog = null, mistakePanel = null, booksNow = [];
+
+  function b64ToBuf(b64) {
+    const bin = atob(b64), out = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+    return out.buffer;
+  }
+  function makeStore() {
+    try {
+      if (!window.localStorage) return null;
+      return DataCore.createStore({ small: window.localStorage, large: null, namespace: DataCore.NS_GLOBAL });
+    } catch (e) { return null; }
+  }
+
+  /* 样卷的"标准答案"写法（仅示例用）：单选/多选取字母、判断取正误、简答取要点文本 */
+  function rightAnswerOf(q) {
+    if (!q) return '';
+    if (q.type === '多选') return (q.answerLetters || []).join('');
+    if (q.type === '单选') return (q.answerLetters || [])[0] || '';
+    if (q.type === '判断') return q.judgeValue === true ? '√' : (q.judgeValue === false ? '×' : '');
+    return (q.keywords || []).map(function (k) { return k.text; }).join(' ') || String(q.answer || '');
+  }
+
+  /* ---------- 错题列表（按卷分组） ---------- */
+  async function showList() {
+    if (attemptView) { attemptView.destroy(); attemptView = null; }
+    if (wrongView) { wrongView.destroy(); wrongView = null; }
+    backBtn.style.display = 'none';
+    host.textContent = '';
+    const store = makeStore();
+    let books = [], examCount = 0;
+    if (store) {
+      const idx = await ExamsCore.listExams(store);
+      const ids = (idx.ok && idx.exams ? idx.exams : []).map(function (e) { return e.id; });
+      examCount = ids.length;
+      /* ⚠ 选『否』保留下来的误答本属于**已删除的卷**，它不在 listExams 里 ——
+       *   必须把"已删除卷册"的 id 也并进来（`WrongCore.loadAllWithDeleted`），
+       *   否则用户选了"保留记录"，回到本页却**什么都看不到**
+       *   （记录还在盘上，界面却装作没有 = 最容易被当成"数据丢了"的那种缺陷）。 */
+      const dead = await ExamsCore.deletedExams(store);
+      const deadIds = (dead.ok && dead.deleted ? dead.deleted : []).map(function (t) { return t.examId; });
+      const loaded = await WrongCore.loadAllWithDeleted(store, ids, deadIds);
+      for (let i = 0; i < loaded.length; i++) {
+        const got = await ExamsCore.getExam(store, loaded[i].examId);
+        /* owner：卷活着 / 已删除（带「已删除试卷（原《…》）」归属标识）/ 查无 —— 由卷册层给，界面不猜 */
+        const own = await ExamsCore.ownerOf(store, loaded[i].examId);
+        books.push({ book: loaded[i].book, exam: got.ok ? got.exam : null, owner: own.ok ? own : null });
+      }
+      /* ⚠ 还有**第三类**：从没入册的卷（答题页拖入 docx / 直接答内置样卷时，卷 id 就是文件名）。
+       *   它们的误答本在盘上、也不在 listExams / deletedExams 里 —— 不捞出来，用户刚交完卷回到本页
+       *   只能看到一句"本地还没有卷子"（记录明明在 = 最容易被当成"我记录丢了"）。
+       *   `exam: null` 时由卷册层给归属文案（"试卷 <卷id>"），界面照样能看能删。 */
+      const orphan = await WrongCore.orphanIds(store, ids.concat(deadIds));
+      const loadedOrphan = await WrongCore.loadAll(store, orphan);
+      for (let i = 0; i < loadedOrphan.length; i++) {
+        const own = await ExamsCore.ownerOf(store, loadedOrphan[i].examId);
+        books.push({ book: loadedOrphan[i].book, exam: null, owner: own.ok ? own : null });
+      }
+    }
+    /* 卷册里有卷子、只是还没错过题 → 给**真空态**，不要拿示例冒充用户数据 */
+    if (!books.length && examCount > 0) {
+      tip.textContent = '这套卷册还没有错题（' + examCount + ' 套卷）';
+      booksNow = [];
+      wrongView = WrongView.mount({ container: host, books: [], onJump: function (a, b, c) { jump(a, b, c); } });
+      return;
+    }
+    if (!books.length) {
+      /* 一份本地数据都没有时，用内置样卷现造一本示例，保证这一页打开就有东西看 */
+      const parsed = await QuizParser.parseDocx(b64ToBuf(SAMPLE_B64));
+      const qs = (parsed.questions || []).map(function (q) { return SchemaCore.createQuestion(q); });
+      const demo = SchemaCore.createExam({ id: 'demo', title: '内置样卷（示例错题本）', schemaVersion: SchemaCore.SCHEMA_VERSION, questions: qs },
+                                         { now: new Date().toISOString() });
+      const s = AttemptCore.createSession({ examId: 'demo', title: demo.title, questions: qs, config: QuizCore.DEFAULT_CONFIG });
+      /* 故意把前两题答错、后面照标准答案答对 —— 演示"误答自动进本 / 答对只清连续错误"的样子 */
+      qs.forEach(function (q, i) {
+        AttemptCore.goto(s, i);
+        AttemptCore.answer(s, i < 2 ? '__演示用的错答__' : rightAnswerOf(q));
+        AttemptCore.submitCurrent(s);
+      });
+      const fin = AttemptCore.finish(s, { confirmUnanswered: true, now: new Date().toISOString() });
+      const byId = {}; qs.forEach(function (q) { byId[q.id] = q; });
+      const book = WrongCore.createBook('demo', new Date().toISOString());
+      WrongCore.collect(book, fin.summary.per, { now: new Date().toISOString(), sessionAt: 'demo', questionsById: byId, answers: s.answers });
+      books = [{ book: book, exam: demo }];
+      tip.textContent = '内置样卷的示例错题本（示例不写进你的存储）';
+    } else {
+      tip.textContent = '按试卷分组（共 ' + books.length + ' 套卷）';
+    }
+    booksNow = books;
+    wrongView = WrongView.mount({
+      container: host, books: books,
+      onJump: function (examId, index, t, extra) { jump(examId, index, t, extra); },
+      /* 举一反三：磁贴里那颗按钮 → 把这一题交给下面的 AI 面板（面板自己做生成/加入） */
+      onMistake: function (examId, qid) { onMistake(examId, qid); },
+      onDelete: function (examId) { askDelete(examId); }
+    });
+    mountMistake();
+  }
+
+  /* ---------- 举一反三（磁贴里那颗按钮进来） ----------
+   * 面板本身没变（还是 AiScene.mountMistake 那一块，挂在下面），
+   * 变的只是入口：现在从**磁贴里**那颗「举一反三」按钮进来 —— 好处是"哪道题"永远不会搞错，
+   * 用户点的是这一条，我们就用这一条去生成（不再依赖"先选中再去找面板"）。 */
+  function onMistake(examId, qid) {
+    if (wrongView && wrongView.select) wrongView.select(examId, qid);   // 让面板 getSelection() 拿到同一题
+    mountMistake();
+    const box = document.getElementById('aimistake');
+    if (box && box.scrollIntoView) { try { box.scrollIntoView({ block: 'nearest' }); } catch (e) { /* 老浏览器忽略 */ } }
+    /* ⚠ 这里**不再**另写一句"举一反三是什么"：磁贴里那颗按钮旁边已经有一行小字讲同一件事
+     *   （用户要求"把不必要的小字都删掉"，同一句话说两遍就是那类要删的）。 */
+  }
+
+  /* ---------- 举一反三：给选中的误答题目生成同考点新题，并可直接加入这套卷 ---------- */
+  function mountMistake() {
+    const box = document.getElementById('aimistake');
+    if (mistakePanel) { mistakePanel.destroy(); mistakePanel = null; }
+    box.classList.remove('hidden');
+    box.innerHTML = '';
+    mistakePanel = AiScene.mountMistake({
+      container: box,
+      keyStore: AiCore.openKeyStore(window.localStorage),   // 密钥在 secret 空间
+      examStore: makeStore(),                              // 题库在 app 空间（两个 store 不能混）
+      /* 用户要求：**这一页不再填 Key**（"apikey 的导入功能从错题本页面…直接删除，因为导入页面本来就能用"）。
+       * 合并版有「导入 / 校对」页 → 这里只报状态 + 指路；
+       * 独立单页版（错题本.html）没有那一页可去 → 传空，保留就地展开，免得变成"要 Key 却没处填"。
+       * ⚠ 判据必须用**真窗口文档**：合并版里这段代码拿到的是"作用域化的 document"，
+       *   它的 getElementById 只在**本面板内部**找，而页签在面板外面 —— 用它会永远判成"独立版"，
+       *   于是"删掉的入口"又悄悄回来了（这种静默退化最容易漏）。 */
+      keyHint: (function () {
+        try {
+          return (typeof window !== 'undefined' && window.document && window.document.getElementById('tab-review'))
+            ? '填 / 换 Key 去「导入 / 校对」页顶部那颗「AI 密钥与供应商」' : null;
+        } catch (e) { return null; }
+      })(),
+      getSelection: function () {
+        const sel = wrongView && wrongView.selected ? wrongView.selected() : null;
+        if (!sel) return null;
+        const item = booksNow.filter(function (b) { return b.book.examId === sel.examId; })[0];
+        if (!item || !item.exam) return null;                 // 卷已删 → 不能"加入这套卷"
+        const q = (item.exam.questions || []).filter(function (x) { return x.id === sel.qid; })[0];
+        if (!q) return null;
+        const idx = (item.exam.questions || []).map(function (x) { return x.id; }).indexOf(sel.qid);
+        return { examId: sel.examId, examTitle: item.exam.title, qid: sel.qid, question: q,
+                 index: idx, entry: (item.book.entries || {})[sel.qid] || {} };
+      },
+      onAdded: function (r) {
+        tip.textContent = '新题已加入《' + r.examTitle + '》：' + r.type + ' 分组现在有 ' + r.groupCount + ' 题（整卷 ' + r.after.total + ' 题）';
+      }
+    });
+  }
+
+  /* ---------- 删卷：先问清楚，再按选定政策执行 ---------- */
+  async function askDelete(examId) {
+    const store = makeStore();
+    if (!store) { tip.textContent = '存储不可用，删不了'; return; }
+    const pv = await ExamsCore.deletePreview(store, examId);
+    if (!pv.ok) { tip.textContent = pv.error || '这份试卷已经不在了'; return; }
+    if (dialog) { dialog.destroy(); dialog = null; }
+    dialog = DeleteDialog.mount({
+      container: host, prompt: pv.plan,
+      onChoose: function (policy) { runDelete(examId, policy, pv.title); },
+      onCancel: function () { if (dialog) { dialog.destroy(); dialog = null; } tip.textContent = '已取消：什么都没删'; }
+    });
+  }
+
+  async function runDelete(examId, policy, title) {
+    if (dialog) { dialog.destroy(); dialog = null; }
+    const store = makeStore();
+    const r = store ? await ExamsCore.deleteExam(store, examId, { policy: policy, now: new Date().toISOString() }) : { ok: false };
+    if (!r.ok) { tip.textContent = '删除失败：' + (r.error || r.message || ''); return; }
+    const kept = (r.orphansKept || []).length;
+    await showList();                                        // 重新读一遍归属，界面与存储对齐
+    tip.textContent = r.policy === 'cascade'
+      ? '已删除《' + title + '》：连记录一起删了（不可恢复）'
+      : '已删除《' + title + '》本体，' + kept + ' 类记录保留（标为「已删除试卷」）';
+  }
+
+  /* ---------- 跳回原卷的那道题（**只出这道卷的错题**） ----------
+   * 用户要求："点进去之后题目列表应该是错题本里的题" —— 所以这一轮只装**本子里这些错题**，
+   * 顺序仍按卷内原顺序；「下一题」于是就在错题之间走，题号索引里也只有错题。
+   * extra.qids 由错题本磁贴给出（= 这套卷在误答本里的全部题号）。 */
+  async function jump(examId, index, t, extra) {
+    const store = makeStore();
+    const got = store ? await ExamsCore.getExam(store, examId) : { ok: false };
+    /* ⚠ 存储里读不到时，落回**内存里那份卷**（booksNow 带着 exam）——
+     *   内置样卷的示例错题本就是这种情况：它**故意不写进存储**，早先于是"跳到这道题"永远跳不动
+     *   （真浏览器取证时抓到：提示语是"这套卷已经不在了"）。 */
+    const mem = booksNow.filter(function (b) { return b.book.examId === examId; })[0];
+    const exam = (got && got.ok && got.exam) ? got.exam : ((mem && mem.exam) || null);
+    if (!exam) { tip.textContent = '这套卷已经不在了，跳不过去'; return; }
+    if (wrongView) { wrongView.destroy(); wrongView = null; }
+    host.textContent = '';
+    backBtn.style.display = '';
+    const all = exam.questions || [];
+    const wantQid = (extra && extra.qid) || (all[index] && all[index].id) || null;
+    const qids = (extra && extra.qids) || null;
+    let qs = all;
+    let idx = index;
+    if (qids && qids.length) {
+      const keep = {};
+      qids.forEach(function (id) { keep[id] = 1; });
+      qs = all.filter(function (q) { return keep[q.id]; });
+      const at = qs.map(function (q) { return q.id; }).indexOf(wantQid);
+      idx = at >= 0 ? at : 0;
+      if (!qs.length) { tip.textContent = '这些错题已经不在卷子里了（可能被删/改过）'; qs = all; idx = index; }
+    }
+    const onlyWrong = (qs !== all);
+    const session = AttemptCore.createSession({
+      examId: examId,
+      title: ((t && t.title) || exam.title) + (onlyWrong ? '（只刷错题 ' + qs.length + ' 题）' : ''),
+      questions: qs,
+      config: QuizCore.resolveConfig(null, exam), startedAt: new Date().toISOString()
+    });
+    AttemptCore.goto(session, idx);                         // ← 定位到那一题
+    attemptView = AttemptView.mount({ container: host, session: session, mountPanel: false });
+    /* 说明写实：这是一轮**新的**作答（没绑进度存储 → 不落盘、也不会改写原来的错题记录） */
+    tip.textContent = onlyWrong
+      ? ('已跳到《' + ((t && t.title) || exam.title) + '》的错题第 ' + (idx + 1) + ' / ' + qs.length
+         + ' 题（只出这道卷的错题；新一轮作答，不改写原有错题记录）')
+      : ('已跳到《' + session.title + '》第 ' + (index + 1) + ' 题（新一轮作答，不改写原有错题记录）');
+  }
+
+  backBtn.addEventListener('click', function () { showList(); });
+  /* 合并版（答题全能版）切到本面板时要能**重新读盘** —— 否则刚在答题面板交卷收进来的错题看不见。
+   * 独立页里没人调它，留着也无害（单一入口，不额外暴露别的）。 */
+  window.__wrongRefresh = function () { showList().catch(function () { /* 刷新失败保持原样 */ }); };
+  showList().catch(function (e) { host.textContent = '打开错题本失败：' + (e && e.message || e); });
+})();
+</script>
+</body></html>

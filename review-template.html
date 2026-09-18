@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>校对入库面板 · 单文件离线</title>
+<style>
+  :root{color-scheme:light}
+  html,body{margin:0;height:100%;max-width:100%;overflow-x:hidden;overflow-x:clip}
+  body{font:16px/1.5 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;background:#eef0f4;color:#1b1b1f}
+  .wrap{max-width:760px;margin:0 auto;height:100%;display:flex;flex-direction:column;background:#f6f7f9}
+  .top{background:#fff;border-bottom:1px solid #e3e5e8;padding:12px}
+  .top h1{margin:0 0 4px;font-size:18px}
+  .top p{margin:0;color:#666;font-size:14px}
+  .grid{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  /* 拖入区（用户要求：把"直接拖入文件"整合到导入这一页） */
+  .drop{border:1px dashed #b9c0c8;border-radius:10px;padding:8px 12px;font-size:13.5px;color:#6b7280;
+        display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;min-height:44px;cursor:pointer}
+  .drop.on{background:#e8f0fb;border-color:#2b6cb0;color:#1b1b1f}
+  button,input[type=file]{min-height:44px;font-size:16px;border-radius:10px;border:1px solid #cfd3d8;background:#fff;padding:0 14px;cursor:pointer}
+  .primary{background:#1f6feb;border-color:#1f6feb;color:#fff;font-weight:600}
+  .stage{flex:1 1 auto;min-height:0;display:flex}
+  .stage>.qp{flex:1 1 auto}
+  .out{background:#0f172a;color:#e6edf3;font:13px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-all;
+       max-height:34vh;overflow:auto;padding:10px;margin:0;border-top:1px solid #e3e5e8}
+  .msg{padding:10px 12px;font-size:14px}
+  .msg.err{background:#fdecea;color:#8c1d18}
+  .msg.ok{background:#e7f6ec;color:#0f5132}
+  .hidden{display:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="top">
+    <h1>校对入库面板</h1>
+    <p>选一个 <code>.docx</code> 或 <code>.txt</code>：逐题校对 → 确认入库。<b>没点"确认入库"之前，题库和存储不会有任何变化。</b></p>
+    <div class="grid">
+      <input type="file" id="file" accept=".docx,.txt,.md,text/plain">
+      <label class="drop" id="drop">把 .docx / .txt 拖到这里（也可以点这里选文件）</label>
+      <button type="button" class="primary" id="demo">载入内置样卷</button>
+      <button type="button" id="clear">清空</button>
+      <button type="button" id="aikey">AI 密钥与供应商</button>
+      <button type="button" id="aibatch">生成解析</button>
+    </div>
+    <div id="aihost" class="hidden" style="margin-top:10px"></div>
+    <div id="batchhost" class="hidden" style="margin-top:10px"></div>
+    <div id="msg" class="msg hidden"></div>
+  </div>
+
+  <div class="stage" id="stage"></div>
+  <pre class="out" id="out">（入库后这里会显示导出的 JSON，可以直接对照你改过的字段）</pre>
+</div>
+
+<script>
+/* ==================== 内联：解析核心（顺序不可颠倒！） ==================== */
+__ZIP_CORE__
+__DOCX_CORE__
+__TEXT_CORE__
+__SEGMENT_CORE__
+__PARSER_CORE__
+/* ==================== 内联：结构工厂 / 存储 ==================== */
+__SCHEMA_CORE__
+__DATA_CORE__
+/* 卷册（ai.js 需要 ExamsCore 才能"把新题加进试卷"；必须排在 ReviewCore 与 AiCore 之前） */
+__QUIZ_CORE__
+__EXAMS_CORE__
+/* ==================== 内联：校对入库逻辑 ==================== */
+__REVIEW_CORE__
+/* ==================== 内联：面板 DOM 层 ==================== */
+__REVIEW_UI__
+/* ==================== 内联：AI 密钥 / 单题智能 / 场景化（总评·举一反三） ==================== */
+__AI_CORE__
+__AI_SETTINGS__
+__AI_SINGLE__
+__AI_SCENE__
+/* ==================== 内联：内置样卷 ==================== */
+const SAMPLE_B64 = "__SAMPLE_B64__";
+__TXT_FIXTURES__
+
+/* ==================== 页面逻辑 ==================== */
+const $ = s => document.querySelector(s);
+const msgEl = $('#msg'), stage = $('#stage'), out = $('#out');
+let panel = null;
+
+function showMsg(text, kind){
+  msgEl.className = 'msg ' + (kind || '');
+  msgEl.textContent = text;
+  msgEl.classList.remove('hidden');
+}
+function clearMsg(){ msgEl.classList.add('hidden'); msgEl.textContent=''; }
+
+function b64ToU8(b64){ const bin = atob(b64); const u = new Uint8Array(bin.length); for (let i=0;i<bin.length;i++) u[i]=bin.charCodeAt(i); return u; }
+
+/* 单文件离线 demo：存储只用 localStorage（大后端留给正式应用）
+ * ⚠ 命名空间必须用 DataCore.NS_GLOBAL（'app'）—— 这里导入的卷子要能被「答题页 / 错题本」读到。
+ *   早先这里手写 'quizdemo'，结果校对面板导进来的卷子在别的页面**一份都看不见**（跨页数据分家）。 */
+const store = DataCore.createStore({ small: window.localStorage, large: null, namespace: DataCore.NS_GLOBAL });
+
+function mountPanel(parsed, title){
+  const made = ReviewCore.createDraft(parsed, { title: title });
+  if (!made.ok){ showMsg(made.error + (made.hint ? '：'+made.hint : ''), 'err'); return; }
+  panel = ReviewPanel.mount(stage, made.draft, {
+    store: store,
+    title: title,
+    onCommit: function(res){
+      if (res.ok){
+        showMsg('已入库：' + res.count + ' 题（examId=' + res.examId + '）。下方是导出的 JSON，可对照你改过的字段。', 'ok');
+        out.textContent = ReviewCore.examToJson(res.exam);
+        /* 入库成功后给一个「去答题」的直达入口（合并版才有答题面板；独立单页版钩子不存在 → 按钮不出现）。
+         * 没有它的话，导入完的卷要自己去答题页再找一遍 —— 用户实测就是卡在这儿（"导入之后答不了题"）。 */
+        if (typeof window.__answerLoadExam === 'function' && res.examId) {
+          const go = document.createElement('button');
+          go.type = 'button';
+          go.className = 'primary gopractice';
+          go.style.marginLeft = '10px';
+          go.textContent = '去答题（' + res.count + ' 题）';
+          go.addEventListener('click', function () {
+            window.__answerLoadExam(res.examId);
+          });
+          msgEl.appendChild(go);
+        }
+      } else {
+        showMsg('入库被拒绝：' + res.error + (res.hint ? '（' + res.hint + '）' : ''), 'err');
+        out.textContent = JSON.stringify({ blocking: res.blocking || [], errors: res.errors || [] }, null, 2);
+      }
+    },
+    onCancel: function(){
+      showMsg('已取消导入：题库与存储没有任何变化（连一条记录都没写）。', 'ok');
+      panel = null; stage.innerHTML = '';
+    }
+  });
+  clearMsg();
+}
+
+/* 合并版切到「导入 / 校对」页签时会调这个钩子（app-template 里本来就有这一行，之前一直是空的）。
+ * 用途：面板可能在**隐藏状态**下挂载（隐藏时 clientHeight=0，滚动相关按钮的标签/可用性算不准），
+ * 切回来时重新量一次，保证"到底部 / 回到顶部"的标签说的是实话。 */
+window.__reviewRefresh = function () {
+  if (panel && typeof panel.syncLabels === 'function') panel.syncLabels();
+};
+
+/* 打开文件
+ * 路由必须**先嗅探字节、再看扩展名**：
+ *   只看扩展名的话，把 .doc 改名成 .txt 就会静默解析出 0 题，
+ *   而不是明确告诉他"这是老格式，请另存为 .docx"。
+ * ⚠ 抽成 openFile(f)：**选文件与拖入走同一条路**（不另写第二份解析）。
+ */
+async function openFile(f){
+  if (!f) return;
+  clearMsg();
+  try {
+    const buf = await f.arrayBuffer();
+    const kind = ZipCore.sniff(new Uint8Array(buf)).kind;
+
+    if (kind === 'ole2') {
+      showMsg('这个文件是 .doc 老格式（OLE2 复合文件），不是 .docx。请在 Word 里「另存为」→ 选择「Word 文档 (*.docx)」后再导入。', 'err');
+      return;
+    }
+    if (kind === 'empty') {
+      showMsg('这个文件是空的（0 字节），没有内容可以导入。', 'err');
+      return;
+    }
+
+    let parsed;
+    if (kind === 'zip') {
+      const diag = await DocxCore.diagnose(buf);
+      if (!diag.ok) { showMsg('这个文件读不了：' + diag.message + '　建议：' + diag.hint, 'err'); return; }
+      parsed = await QuizParser.parseDocx(buf);
+    } else {
+      // 非 zip 非 ole2：按纯文本处理（扩展名只是参考，不决定路由）
+      parsed = await QuizParser.parseTxtBytes(buf);
+      if (parsed.meta && parsed.meta.lossy) {
+        showMsg('注意：这份文本解码时有损失（replaced=' + parsed.meta.replaced + '，判定编码 ' + parsed.meta.encoding + '）。请重点核对题干。', 'err');
+      } else if (parsed.stats.total === 0) {
+        showMsg('没能从这份文件里认出题目。它可能是二进制文件改了扩展名，或格式与预期不同——请检查后重试。', 'err');
+        return;
+      }
+    }
+    mountPanel(parsed, f.name.replace(/\.[^.]+$/, ''));
+  } catch (err) {
+    showMsg('解析失败：' + (err && (err.hint || err.message) || err), 'err');
+  }
+}
+
+/* 选文件 / 点拖入区 → 都走 openFile（用户要求：拖入功能整合到这一页） */
+$('#file').addEventListener('change', function (e) {
+  const f = e.target.files && e.target.files[0];
+  if (f) openFile(f);
+});
+(function wireDrop(){
+  const dz = $('#drop');
+  const fi = $('#file');
+  if (!dz) return;                                   // 没有拖入区（老页面/别的宿主）就安静跳过
+  if (fi) dz.addEventListener('click', function (ev) { if (ev.target !== fi) fi.click(); });
+  dz.addEventListener('dragover', function (e) { e.preventDefault(); dz.classList.add('on'); });
+  dz.addEventListener('dragleave', function () { dz.classList.remove('on'); });
+  dz.addEventListener('drop', function (e) {
+    e.preventDefault(); dz.classList.remove('on');
+    const f = e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+    if (f) openFile(f);
+  });
+})();
+
+/* 内置样卷：docx 与 txt 各来一个，方便对照 */
+let demoStage = 0;
+$('#demo').addEventListener('click', async function(){
+  clearMsg();
+  try {
+    if (demoStage % 2 === 0){
+      const parsed = await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+      mountPanel(parsed, '内置样卷（docx）');
+      showMsg('已载入内置 docx 样卷（10 题，其中有待校对项）。', '');
+    } else {
+      const parsed = await QuizParser.parseTxtBytes(b64ToU8(TXT_FIX.gbk));
+      mountPanel(parsed, '内置样卷（GBK txt）');
+      showMsg('已载入内置 txt 样卷（GBK 编码，4 题）。再点一次换回 docx。', '');
+    }
+    demoStage++;
+  } catch (err){
+    showMsg('载入内置样卷失败：' + (err && err.message || err), 'err');
+  }
+});
+
+$('#clear').addEventListener('click', function(){
+  panel = null; stage.innerHTML = ''; clearMsg();
+  out.textContent = '（入库后这里会显示导出的 JSON，可以直接对照你改过的字段）';
+});
+
+/* AI 密钥与供应商能力表
+ * 密钥走**独立命名空间**（AiCore.openKeyStore → secret），与题库/记录的 app 空间分开；
+ * 这样"分享文件只写 recv_<examId>"这条隔离规则之外，密钥再多一层互不干扰。 */
+let aiPanel = null;
+$('#aikey').addEventListener('click', async function(){
+  clearMsg();
+  const box = $('#aihost');
+  if (aiPanel) { aiPanel.destroy(); aiPanel = null; box.classList.add('hidden'); box.innerHTML = ''; return; }
+  box.classList.remove('hidden');
+  box.innerHTML = '';
+  aiPanel = AiSettings.mount({
+    container: box,
+    store: AiCore.openKeyStore(window.localStorage),
+    onChange: function (action, provider) {
+      showMsg((action === 'save' ? '已保存 ' : '已清除 ') + provider + ' 的 Key（只在你这台机器上）', 'ok');
+    }
+  });
+  const m = await aiPanel.refresh();
+  showMsg('供应商能力表已加载：共 ' + m.rows.length + ' 家，其中 ' + m.rows.filter(function (r) { return !r.browserDirect; }).length
+    + ' 家不能由浏览器直连（已明确标注）。密钥只存本机，不随分享文件导出。', '');
+});
+
+showMsg('准备就绪。点「载入内置样卷」或自己选文件。', '');
+
+/* 生成解析（**整卷**，用户要求：把原来的「单题智能」与「整卷批量」合成一颗按钮）：
+ * 对着**这份草案里还缺解析的题**（简答题、或没有 explanation 的题）逐题生成解析；
+ * 先弹消耗确认窗（显示题数与估算 token），确认后逐题跑，单题失败只跳过那一题。
+ * ⚠ 这一层只改**草案**，不写盘 —— 真正落盘仍然是「确认入库」那一刻的事。 */
+let aiBatch = null;
+$('#aibatch').addEventListener('click', function(){
+  clearMsg();
+  const box = $('#batchhost');
+  if (aiBatch) { aiBatch.destroy(); aiBatch = null; box.classList.add('hidden'); box.innerHTML = ''; return; }
+  if (!panel) { showMsg('先载入一份文件（或内置样卷），再点「生成解析」。', 'err'); return; }
+  box.classList.remove('hidden');
+  box.innerHTML = '';
+  aiBatch = AiSingle.mountBatch({
+    container: box,
+    keyStore: AiCore.openKeyStore(window.localStorage),
+    keyHint: '填 / 换 Key 用本页顶部那颗「AI 密钥与供应商」（只存本机，不上传）',
+    kind: 'explain',
+    getQuestions: function () { return (panel.getDraft().questions || []).filter(function (q) { return q.type === '简答' || !q.explanation; }); },
+    applyBatch: function (res) {
+      let draft = panel.getDraft(), applied = 0, changed = false;
+      (res.results || []).forEach(function (r) {
+        if (!r.ok || !r.patches) return;
+        const idx = (draft.questions || []).map(function (q) { return q.id; }).indexOf(r.id);
+        if (idx < 0) return;
+        const w = ReviewCore.setExplanation(draft, idx, r.patches.explanation);
+        if (w.ok) { draft = w.draft; applied++; changed = true; }
+      });
+      if (changed) panel.setDraft(draft);
+      showMsg('生成解析完成：成功 ' + res.okCount + ' / 失败 ' + res.failCount + '，其中 ' + applied + ' 条解析已写回草案（还没入库）。',
+        res.failCount ? 'err' : 'ok');
+    }
+  });
+  showMsg('点「开始生成解析」会先弹消耗确认并显示估算 token；确认后逐题生成，单题失败只跳过那一题。', '');
+});
+</script>
+</body>
+</html>

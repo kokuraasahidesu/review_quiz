@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>习题解析器 · 轻量 Demo</title>
+<style>
+:root{--bg:#0f1116;--card:#171a21;--line:#252a34;--fg:#e6e9ef;--dim:#8b93a3;--ok:#3ddc84;--warn:#ffb020;--bad:#ff5c5c;--run:#4a9eff;--pur:#c58fff}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.6 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+header{position:sticky;top:0;z-index:9;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px}
+h1{font-size:16px;margin:0 0 4px}
+.sub{color:var(--dim);font-size:12.5px}
+.bar{display:flex;gap:8px;flex-wrap:wrap;margin-top:10px}
+button{font:inherit;background:#22304a;color:var(--fg);border:1px solid #2f4468;border-radius:8px;padding:8px 13px;cursor:pointer}
+button:hover{background:#2b3d5e}
+button.ghost{background:transparent;border-color:var(--line);color:var(--dim);padding:6px 10px;font-size:13px}
+button.on{background:#1d4a34;border-color:#2c6b4a;color:var(--ok)}
+label.file{display:inline-block}
+label.file input{display:none}
+main{padding:14px 16px 70px;max-width:1080px;margin:0 auto}
+.sum{display:grid;grid-template-columns:repeat(auto-fit,minmax(112px,1fr));gap:10px;margin-bottom:14px}
+.kpi{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+.kpi b{display:block;font-size:20px;font-variant-numeric:tabular-nums}
+.kpi span{color:var(--dim);font-size:12px}
+.q{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+.q.warn{border-color:#5a4418;background:#1c1810}
+.qhead{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:8px}
+.tag{font-size:12px;padding:2px 9px;border-radius:20px;border:1px solid var(--line);color:var(--run)}
+.tag.j{color:var(--warn)}.tag.box{color:var(--pur)}
+.tag.rv{color:var(--bad);border-color:#5a2a2a}
+select,input[type=text],textarea{font:inherit;background:#0d1015;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:6px 9px;width:100%}
+textarea{resize:vertical;min-height:52px;line-height:1.55}
+.stem{font-size:15.5px;font-weight:600;margin:2px 0 8px;white-space:pre-wrap}
+.opts{display:grid;gap:4px;margin:6px 0}
+.opt{display:flex;gap:8px;font-size:14px;color:#cfd6e2}
+.opt b{color:var(--run);min-width:16px}
+.row{display:grid;grid-template-columns:82px 1fr;gap:8px;align-items:start;margin-top:7px}
+.row>span{color:var(--dim);font-size:13px;padding-top:7px}
+.kw{display:flex;gap:6px;flex-wrap:wrap;margin-top:4px}
+.chip{display:inline-flex;align-items:center;gap:5px;background:#0d1015;border:1px solid var(--line);border-radius:20px;padding:3px 4px 3px 11px;font-size:13px}
+.chip i{font-style:normal;color:var(--dim);font-size:11px}
+.chip button{background:transparent;border:none;color:var(--bad);padding:0 7px;font-size:15px;line-height:1}
+.addkw{display:flex;gap:6px;margin-top:6px}
+.addkw input{flex:1}
+.rvlist{margin:8px 0 0;padding:8px 10px;background:#2a1a1a;border:1px solid #5a2a2a;border-radius:7px;color:#ffb3b3;font-size:13px}
+details{margin-top:12px;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+summary{cursor:pointer;color:var(--dim);font-size:13.5px}
+pre{margin:8px 0 0;background:#0d1015;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:340px;overflow:auto;font-size:12.5px;color:#b9c2d0;white-space:pre-wrap}
+.note{background:#12212e;border:1px solid #24506e;border-radius:10px;padding:11px 13px;font-size:13px;line-height:1.75;margin-bottom:14px}
+.note b{color:#7fd1e0}
+.err{background:#2a1414;border:1px solid #5a2a2a;border-radius:10px;padding:11px 13px;color:#ffb3b3;font-size:13.5px;margin-bottom:14px;display:none}
+.hint{color:var(--dim);font-size:12.5px;margin-top:6px}
+@media(max-width:560px){.row{grid-template-columns:1fr}.row>span{padding-top:0}}
+</style></head><body>
+<header>
+  <h1>习题解析器 · 轻量 Demo</h1>
+  <div class="sub">docx/txt → 自动切题 → 抓取加粗/高亮/颜色关键词 → 人工校对。纯前端、零依赖、不写任何存储。</div>
+  <div class="bar">
+    <button id="btnSample">载入内置样卷</button>
+    <label class="file"><input type="file" id="file" accept=".docx"><span><button type="button" onclick="document.getElementById('file').click()">选择 .docx</button></span></label>
+    <button class="ghost" id="btnTxt">粘贴 txt</button>
+    <button class="ghost" id="btnOnly">只看待校对</button>
+    <button class="ghost" id="btnJson">导出校对结果 JSON</button>
+  </div>
+</header>
+<main>
+  <div class="note">
+    <b>这个 Demo 只验证"解析器"这一件事</b>（需求里风险最高、占工作量最大的一环）。<br>
+    · <b>不依赖任何存储</b>（不写 localStorage / IndexedDB）——因为你的存储探针还没确认，这样先跑起来不受影响。<br>
+    · 已实测支持：<b>加粗 / 高亮 / 字体颜色</b>三色关键词、<b>文本框（w:txbxContent）穿透</b>、判断题多种正误写法、歧义答案标待校对。<br>
+    · 已知不足：<b>.doc 老格式不支持</b>（请另存为 .docx）；文本框里的题会被排到末尾；复杂编号（一、二 / 1.1）暂未做。
+  </div>
+  <div class="err" id="err"></div>
+  <div class="sum" id="sum"></div>
+  <div id="list"></div>
+  <details>
+    <summary>原文段落预览（带样式标记，用于核对解析有没有丢东西）</summary>
+    <pre id="raw">—</pre>
+  </details>
+</main>
+<script>
+/* ==================== 内联：解析核心（顺序不可颠倒！） ==================== */
+/* --- 1/4 自研 ZIP 读取 --- */
+__ZIP_CORE__
+/* --- 2/4 docx → 带样式段落 --- */
+__DOCX_CORE__
+/* --- 3/5 txt 编码层（零依赖叶子模块） --- */
+__TEXT_CORE__
+/* --- 4/5 题型识别/正误归一/歧义标定/切题 --- */
+__SEGMENT_CORE__
+/* --- 5/5 切题门面（依赖上面四个，必须最后） --- */
+__PARSER_CORE__
+/* ==================== 内联：内置样卷(docx base64) ==================== */
+const SAMPLE_B64 = "__SAMPLE_B64__";
+
+/* ==================== 状态 ==================== */
+let RESULT = null;       // { meta, questions, stats }
+let onlyReview = false;
+
+const $ = s => document.querySelector(s);
+const esc = s => String(s == null ? '' : s).replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function showErr(m){ const e=$('#err'); e.style.display='block'; e.textContent = m; }
+function clearErr(){ $('#err').style.display='none'; }
+
+function b64ToU8(b64){
+  const bin = atob(b64);
+  const u8 = new Uint8Array(bin.length);
+  for (let i=0;i<bin.length;i++) u8[i]=bin.charCodeAt(i);
+  return u8;
+}
+
+/* ==================== 渲染 ==================== */
+function renderSummary(){
+  const st = RESULT.stats, t = st.byType;
+  const cells = [
+    ['总题数', st.total],
+    ['单选', t['单选']||0], ['多选', t['多选']||0],
+    ['判断', t['判断']||0], ['简答', t['简答']||0],
+    ['采分关键词', st.keywords],
+    ['待人工校对', st.needsReview]
+  ];
+  $('#sum').innerHTML = cells.map(c =>
+    `<div class="kpi"><b style="${c[0]==='待人工校对'&&c[1]?'color:var(--warn)':''}">${c[1]}</b><span>${c[0]}</span></div>`
+  ).join('');
+}
+
+function renderList(){
+  const qs = RESULT.questions;
+  const box = $('#list');
+  box.innerHTML = '';
+  let shown = 0;
+
+  qs.forEach(function(q, i){
+    if (onlyReview && !q.review.length) return;
+    shown++;
+    const div = document.createElement('div');
+    div.className = 'q' + (q.review.length ? ' warn' : '');
+
+    const head = `<div class="qhead">
+      <span class="tag">#${i+1}</span>
+      <span class="tag ${q.type==='判断'?'j':''}">${esc(q.type)}</span>
+      ${q.inTextBox?'<span class="tag box">文本框内</span>':''}
+      ${q.answer?`<span class="tag">答案 ${esc(q.answer)}${q.answerLetters?' → '+q.answerLetters.join(''):''}${(q.judgeValue===true?' → 对':(q.judgeValue===false?' → 错':''))}</span>`:''}
+      ${q.review.length?'<span class="tag rv">待校对</span>':''}
+    </div>`;
+
+    let opts = '';
+    if (q.options.length){
+      opts = '<div class="opts">' + q.options.map(o=>`<div class="opt"><b>${esc(o.label)}</b><span>${esc(o.text)}</span></div>`).join('') + '</div>';
+    }
+
+    let kw = '';
+    if (q.type === '简答'){
+      kw = '<div class="row"><span>采分关键词</span><div><div class="kw" data-kw="'+i+'">' +
+        (q.keywords.length ? q.keywords.map((k,ki)=>
+          `<span class="chip">${esc(k.text)}<i>${esc(k.via)}</i><button title="删除" data-del="${i}:${ki}">×</button></span>`).join('')
+          : '<span class="hint">没有关键词</span>') +
+        '</div><div class="addkw"><input type="text" placeholder="手动加一个关键词" data-kwin="'+i+'"><button data-add="'+i+'">加</button></div></div></div>';
+    }
+
+    const rv = q.review.length ? `<div class="rvlist">需人工确认：${esc(q.review.join('；'))}</div>` : '';
+
+    div.innerHTML = head +
+      `<div class="row"><span>题型</span><div><select data-type="${i}">
+        ${['单选','多选','判断','简答'].map(t=>`<option ${t===q.type?'selected':''}>${t}</option>`).join('')}
+      </select></div></div>` +
+      `<div class="stem">${esc(q.stem)}</div>` + opts +
+      `<div class="row"><span>答案</span><div><input type="text" value="${esc(q.answer)}" data-ans="${i}"></div></div>` +
+      kw +
+      `<div class="row"><span>解析</span><div><textarea data-exp="${i}">${esc(q.explanation)}</textarea></div></div>` +
+      rv;
+
+    box.appendChild(div);
+  });
+
+  if (!shown) box.innerHTML = '<div class="note">没有符合筛选条件的题目。</div>';
+}
+
+function renderRaw(){
+  if (!RESULT.rawParas) { $('#raw').textContent = '（txt 来源没有样式信息）'; return; }
+  $('#raw').textContent = RESULT.rawParas.map(function(p, i){
+    const marks = [];
+    if (p.runs.some(r=>r.bold)) marks.push('粗');
+    if (p.runs.some(r=>r.highlight)) marks.push('亮');
+    if (p.runs.some(r=>r.color)) marks.push('色');
+    if (p.runs.some(r=>r.shading)) marks.push('底');
+    return String(i+1).padStart(3,' ') + (p.inTextBox?' [框]':'    ') + ' ' +
+           (marks.length ? '['+marks.join('')+'] ' : '     ') + p.text;
+  }).join('\n');
+}
+
+function renderAll(){
+  if (!RESULT) return;
+  renderSummary(); renderList(); renderRaw();
+}
+
+/* ==================== 载入 ==================== */
+async function runDocx(arrayBuffer, label){
+  try {
+    clearErr();
+    const r = await QuizParser.parseDocx(arrayBuffer);
+    // 额外把原文段落带上，供核对
+    const entries = await QuizParser.unzip(arrayBuffer);
+    const xml = await (async()=>{ const e=entries['word/document.xml']; if(!e) return null;
+      const b = e.method===0 ? e.raw : await QuizParser.inflateRaw(e.raw);
+      let s = new TextDecoder('utf-8').decode(b); if(s.charCodeAt(0)===0xFEFF) s=s.slice(1); return s; })();
+    r.rawParas = xml ? QuizParser.extractParagraphs(xml) : null;
+    RESULT = r;
+    renderAll();
+  } catch(e){ showErr('解析失败：' + e.message + '（若是 .doc 老格式，请在 Word 里另存为 .docx）'); }
+}
+
+async function loadSample(){
+  const u8 = b64ToU8(SAMPLE_B64);
+  await runDocx(u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength));
+}
+
+function loadTxt(text){
+  clearErr();
+  RESULT = QuizParser.parseText(text);
+  RESULT.rawParas = null;
+  renderAll();
+}
+
+/* ==================== 事件 ==================== */
+$('#btnSample').onclick = loadSample;
+
+$('#file').onchange = function(e){
+  const f = e.target.files[0]; if (!f) return;
+  if (/\.doc$/i.test(f.name)) { showErr('不支持 .doc 老格式，请在 Word 里另存为 .docx 再导入。'); return; }
+  const fr = new FileReader();
+  fr.onload = () => runDocx(fr.result, f.name);
+  fr.readAsArrayBuffer(f);
+};
+
+$('#btnTxt').onclick = function(){
+  const t = prompt('把 txt 内容粘贴到这里（支持【单选】【多选】【判断】【简答】标记）：');
+  if (t) loadTxt(t);
+};
+
+$('#btnOnly').onclick = function(){
+  onlyReview = !onlyReview;
+  this.classList.toggle('on', onlyReview);
+  this.textContent = onlyReview ? '显示全部' : '只看待校对';
+  renderList();
+};
+
+$('#btnJson').onclick = function(){
+  if (!RESULT) return;
+  const blob = new Blob([JSON.stringify(RESULT.questions, null, 2)], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'quiz_parsed.json';
+  document.body.appendChild(a); a.click(); a.remove();
+};
+
+// 编辑绑定（事件委托，避免每题挂监听）
+$('#list').addEventListener('change', function(e){
+  const el = e.target;
+  if (el.dataset.type !== undefined){ RESULT.questions[+el.dataset.type].type = el.value; renderList(); }
+});
+$('#list').addEventListener('input', function(e){
+  const el = e.target;
+  if (el.dataset.ans !== undefined){ RESULT.questions[+el.dataset.ans].answer = el.value; }
+  if (el.dataset.exp !== undefined){ RESULT.questions[+el.dataset.exp].explanation = el.value; }
+});
+$('#list').addEventListener('click', function(e){
+  const t = e.target;
+  if (t.dataset.del !== undefined){
+    const a = t.dataset.del.split(':');
+    RESULT.questions[+a[0]].keywords.splice(+a[1], 1);
+    renderList(); return;
+  }
+  if (t.dataset.add !== undefined){
+    const i = +t.dataset.add;
+    const inp = document.querySelector('[data-kwin="'+i+'"]');
+    const v = (inp.value || '').trim();
+    if (v){ RESULT.questions[i].keywords.push({text:v, via:'手动'}); renderList(); }
+  }
+});
+
+// 拖放
+document.addEventListener('dragover', e => { e.preventDefault(); });
+document.addEventListener('drop', function(e){
+  e.preventDefault();
+  const f = e.dataTransfer.files[0]; if (!f) return;
+  if (/\.doc$/i.test(f.name)) { showErr('不支持 .doc 老格式，请另存为 .docx。'); return; }
+  const fr = new FileReader();
+  fr.onload = () => runDocx(fr.result, f.name);
+  fr.readAsArrayBuffer(f);
+});
+
+/* 启动即载入内置样卷，零操作就能看到结果 */
+loadSample();
+</script></body></html>

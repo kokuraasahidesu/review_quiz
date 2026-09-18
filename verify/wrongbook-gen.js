@@ -1,0 +1,152 @@
+/* 「错题本」交互取证 · 第一步：把实测脚本注入 错题本.html 的副本，供 headless Edge 出数 + 出图。
+ * 运行： node verify/wrongbook-gen.js
+ *       然后（PowerShell）：
+ *         msedge --headless=new --disable-gpu --hide-scrollbars --user-data-dir=<tmp> --window-size=420,1000 `
+ *                --virtual-time-budget=25000 --screenshot=docs/ui-wrong-tile.png --dump-dom `
+ *                file:///D:/apps/tools/quiz-demo/verify/wrongbook.html > verify\wrongbook-dump.html
+ *       最后： node verify/wrongbook-parse.js
+ *
+ * 为什么必须真浏览器跑一次：这一轮加的东西全是**交互**（单击内联展开 / 一次只开一个 / 双击直接跳 /
+ * 磁贴里放按钮），其中"双击"在真浏览器里是 click → click → dblclick 三个事件，
+ * mini-dom 里单独 dispatch 一个 dblclick 是**验不到那个序列**的（Node 测试只能证明处理函数本身对）。
+ */
+const fs = require('fs');
+const path = require('path');
+const HERE = path.join(__dirname, '..');
+
+const DRIVER = [
+  '(function () {',
+  '  var lines = [], okAll = true;',
+  '  function step(name, got, want) {',
+  '    var pass = JSON.stringify(got) === JSON.stringify(want);',
+  '    if (!pass) okAll = false;',
+  '    lines.push((pass ? "PASS  " : "FAIL  ") + name + "  | 实测=" + JSON.stringify(got) + " 期望=" + JSON.stringify(want));',
+  '  }',
+  '  function note(t) { lines.push("----  " + t); }',
+  '  function sleep(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }',
+  '  async function waitFor(fn, tries) {',
+  '    for (var i = 0; i < (tries || 100); i++) { var v = fn(); if (v) return v; await sleep(60); }',
+  '    return null;',
+  '  }',
+  '  function flush() {',
+  '    var pre = document.getElementById("drvReport");',
+  '    if (!pre) { pre = document.createElement("pre"); pre.id = "drvReport"; document.body.appendChild(pre); }',
+  '    pre.textContent = lines.join("\\n");',
+  '    var box = document.getElementById("drvHud");',
+  '    if (!box) { box = document.createElement("div"); box.id = "drvHud"; document.body.appendChild(box); }',
+  '    box.style.cssText = "position:fixed;left:0;bottom:0;right:0;z-index:99999;background:rgba(0,0,0,.9);color:#9f9;"',
+  '      + "font:11px/1.5 Consolas,monospace;padding:5px 7px;max-height:30vh;overflow:auto;white-space:pre-wrap;word-break:break-all";',
+  '    box.textContent = "[错题本交互 · 实测]\\n" + lines.join("\\n");',
+  '    document.title = "错题本交互 " + (okAll ? "ALL PASS" : "有 FAIL") + " (" + lines.length + " 条)";',
+  '  }',
+  '  function byAttr(root, attr, val) {',
+  '    return Array.prototype.slice.call(root.querySelectorAll("[" + attr + (val === undefined ? "" : "=\\"" + val + "\\"") + "]"));',
+  '  }',
+  '  async function run() {',
+  '    try {',
+  '      /* 这一页在没有本地数据时会用**内置样卷**造一本示例错题本 —— 正好当夹具 */',
+  '      var items = await waitFor(function () { var a = byAttr(document, "data-wv", "item"); return a.length >= 2 ? a : null; });',
+  '      step("错题本列表画出来了（≥2 条）", !!items && items.length >= 2, true);',
+  '      if (!items) { flush(); return; }',
+  '      note("  条目数 = " + items.length + "；第一条 = " + JSON.stringify(String(items[0].textContent).slice(0, 30)));',
+  '',
+  '      /* ① 单击 → 磁贴内联展开在**这一条下面**（不是分组底部 / 不是弹层）',
+  '       * ⚠ 每次点击都会重画列表 → **必须重新查节点**：拿旧引用读 nextElementSibling 读到的是',
+  '       *   那棵**已经被摘掉的老树**（实测踩到：className 空、断言假红 —— 这是本项目的老坑）。 */',
+  '      var itemsNow = function () { return byAttr(document, "data-wv", "item"); };',
+  '      itemsNow()[0].click();',
+  '      var tile = await waitFor(function () { return byAttr(document, "data-wv", "tile")[0] || null; });',
+  '      step("单击条目 → 出现磁贴", !!tile, true);',
+  '      step("  一次只画一个磁贴", byAttr(document, "data-wv", "tile").length, 1);',
+  '      var li0 = itemsNow()[0].parentNode;',
+  '      step("  磁贴就在被点那条的**下一个兄弟位**（本题与下一题之间）",',
+  '           [li0.nextElementSibling && li0.nextElementSibling.className,',
+  '            !!(li0.nextElementSibling && li0.nextElementSibling.querySelector("[data-wv=\\"tile\\"]"))],',
+  '           ["wv-tile-li", true]);',
+  '      step("  而且它在同一个列表里（不是在分组末尾另起一块）",',
+  '           li0.nextElementSibling.parentNode === li0.parentNode, true);',
+  '',
+  '      /* ② 磁贴里：跳到这道题 / 举一反三 + 旁边的小字说明 */',
+  '      var jumpBtn = byAttr(tile, "data-wv", "jump")[0];',
+  '      var mkBtn = byAttr(tile, "data-wv", "mistake")[0];',
+  '      var hint = tile.querySelector(".wv-hint");',
+  '      step("  磁贴里有「跳到这道题」", !!jumpBtn, true);',
+  '      step("  也有「举一反三」", !!mkBtn, true);',
+  '      /* 文案精简过：现在是「按考点出新题，可加入本卷（需先填 API Key）」 */',
+  '      step("  举一反三旁边有功能说明小字", !!hint && /新题/.test(String(hint.textContent)) && /API Key/.test(String(hint.textContent)), true);',
+  '      note("  小字 = " + JSON.stringify(String(hint && hint.textContent).slice(0, 46)));',
+  '      step("  小字字号比正文小（是「小字」，不是正文）",',
+  '           hint ? (parseFloat(getComputedStyle(hint).fontSize) <= 13.5) : false, true);',
+  '',
+  '      /* ③ 点开新的 → 旧的自动收回（仍然只有一个磁贴） */',
+  '      var q0 = itemsNow()[0].getAttribute("data-wv-qid");',
+  '      itemsNow()[1].click();',
+  '      await sleep(150);',
+  '      var tiles2 = byAttr(document, "data-wv", "tile");',
+  '      var q1 = itemsNow()[1].getAttribute("data-wv-qid");',
+  '      step("点第 2 条 → 磁贴换成它的（旧的自动收回）",',
+  '           [tiles2.length, tiles2[0] && tiles2[0].getAttribute("data-wv-qid") === q1], [1, true]);',
+  '      step("  被换掉的那条不再是展开态", itemsNow()[0].getAttribute("aria-expanded"), "false");',
+  '      /* 文档截图用：地址栏带 #shot=tile → 就在"磁贴展开着"这一幕收工 */',
+  '      if (String(location.hash).replace(/^#(?:shot=)?/, "") === "tile") {',
+  '        try { byAttr(document, "data-wv", "item")[1].scrollIntoView({ block: "center" }); } catch (e0) { /* ignore */ }',
+  '        var hud0 = document.createElement("div"); hud0.id = "drvHudEarly";',
+  '        hud0.style.cssText = "position:fixed;left:0;bottom:0;right:0;z-index:99999;background:rgba(0,0,0,.9);color:#9f9;font:11px/1.5 Consolas,monospace;padding:5px 7px";',
+  '        hud0.textContent = "[实测] 错题本磁贴：单击内联展开 / 一次只开一个 / 按钮与小字都在磁贴里";',
+  '        document.body.appendChild(hud0);',
+  '        var pre0 = document.createElement("pre"); pre0.id = "drvReport"; pre0.style.display = "none";',
+  '        pre0.textContent = lines.join("\\n"); document.body.appendChild(pre0);',
+  '        return;',
+  '      }',
+  '',
+  '      /* ④ 真双击（click → click → dblclick）→ 直接跳到这道题',
+  '       *   ⚠ 用**当场重新查到的**节点（上一段的重画已经把那批旧节点摘掉了）。 */',
+  '      var target = itemsNow()[1];',
+  '      var tq = target.getAttribute("data-wv-qid");',
+  '      target.dispatchEvent(new MouseEvent("click", { bubbles: true }));',
+  '      target.dispatchEvent(new MouseEvent("click", { bubbles: true }));',
+  '      target.dispatchEvent(new MouseEvent("dblclick", { bubbles: true }));',
+  '      var av = await waitFor(function () { return document.querySelector(".av-root") || null; });',
+  '      step("双击条目 → 直接跳到这道题（切到作答界面）", !!av, true);',
+  '      var tipTxt = String((document.getElementById("tip") || {}).textContent || "");',
+  '      note("  页面提示语 = " + JSON.stringify(tipTxt.slice(0, 60)));',
+  '      step("  错题本列表让位了（不是叠在一起）", byAttr(document, "data-wv", "item").length, 0);',
+  '      var navCells = document.querySelectorAll("[data-av=\\"no\\"]").length;',
+  '      note("  跳过去之后：题号格子 " + navCells + " 个");',
+  '      step("  **题目列表只剩错题**（格子数 = 错题本里这套卷的条数）", navCells, items.length);',
+  '      step("  提示语写清「只出这道卷的错题」", /只出这道卷的错题/.test(tipTxt), true);',
+  '      step("  定位到的正是被双击的那一题",',
+  '           (function () {',
+  '             var cur = document.querySelector("[data-av=\\"no\\"][data-state=\\"current\\"]");',
+  '             return !!cur;',
+  '           })(), true);',
+  '      note("  被双击的题号 = " + tq);',
+  '      /* 收尾自查：界面上不许漏出 markdown 记号（写作说明里的 `**粗体**` 是给开发看的）。',
+  '         先把驱动自己的读数条/报告藏起来（innerText 不数隐藏节点），再读整页可见文本。 */',
+  '      var hid = ["drvReport", "drvHud", "drvHudEarly"].map(function (id) {',
+  '        var n = document.getElementById(id); if (!n) return null;',
+  '        var old = n.style.display; n.style.display = "none"; return function () { n.style.display = old; };',
+  '      }).filter(Boolean);',
+  '      var allText = String(document.body.innerText || "");',
+  '      hid.forEach(function (f) { f(); });',
+  '      note("  整页可见文本 " + allText.length + " 字");',
+  '      step("界面文本里没有漏出来的 markdown 记号（**）", allText.indexOf("**") < 0, true);',
+  '      flush();',
+  '    } catch (e) {',
+  '      okAll = false; lines.push("FAIL  驱动抛错：" + (e && e.stack || e)); flush();',
+  '    }',
+  '  }',
+  '  if (document.readyState === "complete") setTimeout(run, 1200);',
+  '  else window.addEventListener("load", function () { setTimeout(run, 1200); });',
+  '})();'
+].join('\n');
+
+/* 生成前先当语法检查一遍（拼字符串的老坑：中文引号里套英文引号会静默变成"页面一片安静"） */
+try { new Function(DRIVER); } catch (e) { throw new Error('注入脚本有语法错误：' + e.message); }
+
+const src = fs.readFileSync(path.join(HERE, '错题本.html'), 'utf8');
+const at = src.lastIndexOf('</body>');
+if (at < 0) throw new Error('没找到 </body>');
+const out = src.slice(0, at) + '<script>\n' + DRIVER + '\n<\/script>\n' + src.slice(at);
+fs.writeFileSync(path.join(HERE, 'verify', 'wrongbook.html'), out, 'utf8');
+console.log('generated verify/wrongbook.html（注入点 ' + at + '）');

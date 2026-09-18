@@ -1,0 +1,104 @@
+# ---- 与个人环境/真跑记录有关，不进公开仓库 ----
+# 真 Key 端到端的结果（含遮罩 key 与用量），只是本机的一次性记录
+verify/real-ai-last.json
+
+# GitHub 推送用的临时凭据（如果选了"token 文件"那种推法；绝不进仓库）
+.github-token
+.github-token.txt
+
+# ---- 作者本机的发布脚本（不是项目的一部分，不进公开仓库）----
+push.bat
+push-token.bat
+set-repo-meta.bat
+set-repo-meta.ps1
+
+# ---- 构建产物：只发布 review_quiz.html ----
+#   其余成品页由 `node build.js` 按需生成（开发/取证用），不必入库；
+#   它们的中文文件名在网页上也不好点（会被百分号编码）。
+答题页.html
+错题本.html
+校对面板.html
+浏览器自检.html
+解析器Demo.html
+
+# ---- 系统与编辑器垃圾 ----
+Thumbs.db
+ehthumbs.db
+desktop.ini
+.DS_Store
+*~
+*.swp
+.idea/
+.vscode/
+*.log
+*.tmp
+
+# ---- 临时件（本仓库的取证/探针脚本偶尔会写临时文件，约定用 __ 前缀） ----
+#   注意用 `__*` 而不是 `__*.js` 这种按扩展名列举：本轮就被 `__cmsg2.txt`（提交信息草稿）钻过空子
+__*
+verify/__*
+core/__probe_*
+core/parse/__probe_*
+ui/__probe_*
+
+# ---- 依赖（本仓库零依赖，列在这里只是防手滑） ----
+node_modules/
+
+# ---- 窄屏取证的中间产物（可随时由 narrow-evidence-gen.js + Edge 重生成，别进仓库） ----
+#   只保留结论件：verify/narrow-numbers.json（数字快照）与 docs/narrow-shot-*.png（人眼读数）
+verify/narrow-answer.html
+verify/narrow-review.html
+verify/narrow-wrong.html
+verify/narrow-demo.html
+verify/narrow-dump-*.html
+#   「自动翻页等待时间」取证的中间产物（同上：结论件是 docs/ui-autonext-delay.png）
+verify/autonext-delay.html
+verify/autonext-delay-dump.html
+#   「抽题规则 · 逐题型分配」取证的中间产物（结论件是 docs/ui-pick-alloc.png）
+verify/pick-alloc.html
+verify/pick-alloc-dump.html
+#   「真实题集导入」取证的中间产物（结论件是 docs/ui-import-bank.png；**题集正文只进这里，不进仓库**）
+verify/import-bank.html
+verify/import-bank-dump.html
+#   「导入 → 入库 → 答题」取证的中间产物（结论件是 docs/ui-answer-from-library.png）
+verify/answer-library.html
+verify/answer-library-dump.html
+#   「错题本磁贴」取证的中间产物（结论件是 docs/ui-wrong-tile.png）
+verify/wrongbook.html
+verify/wrongbook-dump.html
+#   「电脑端一屏装下」取证的中间产物（结论件是 docs/ui-desktop-answer.png）
+verify/wide-layout.html
+verify/wide-layout-dump.html
+#   同一份页面的"窄屏对照组"dump（420 宽，证明窄屏不进宽屏模式）
+verify/wide-layout-narrow-dump.html
+#   「导入 / 校对页外观」的中间产物（结论件是 docs/ui-import-page.png，安静版外观图）
+verify/review-page.html
+#   自检页的 dump（结论件是页面上的 PASS/FAIL 汇总，随时可重跑）
+verify/selftest-dump.html
+#   「AI 入口：哪里填 Key」取证的中间产物（结论件是 docs/ui-ai-key.png 与 docs/ui-ai-entry.png；
+#   *-before-dump 是拿 git 里旧成品复现"修复前是红的"那一次，同样随时可重生成）
+verify/ai-entry.html
+verify/ai-entry-dump.html
+verify/ai-entry-before-dump.html
+#   「界面小字清单」取证的中间产物（结论件是 verify/smalltext-dump.html 里的清单 + 报告里的数字）
+verify/smalltext.html
+verify/smalltext-before-dump.html
+verify/smalltext-dump.html
+#   「手机端顶栏 + 工具折叠」取证的中间产物（结论件是 docs/ui-mobile-tools.png 与报告里的判定）
+verify/mobile-ui.html
+verify/mobile-ui-dump.html
+
+#   「导出分享」取证的中间产物（结论件是 docs/ui-share-page.png 与报告里的判定）
+verify/export-share.html
+verify/export-share-dump.html
+
+#   「再抽一次 + 未作答优先」取证的中间产物（结论件是 docs/ui-prefer-redraw.png 与报告里的判定）
+verify/prefer-redraw.html
+verify/prefer-redraw-dump.html
+#   窄视口（420 宽）再跑一遍同一条流水线：证明「返回题库 + 重新生成试卷」在窄屏也不压住「交卷」
+verify/prefer-redraw-narrow-dump.html
+
+#   「自动翻页小加载条」的**人眼截图**中间产物（结论件是 docs/ui-jumpbar.png；
+#   判据不在这份 HTML 里，它的存在与动画时长由 autonext-delay 的 DOM 断言硬证）
+verify/jumpbar-shot.html
+verify/jumpbar-shot-dump.html

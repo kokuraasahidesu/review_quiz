@@ -1,0 +1,2160 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>浏览器自检 · 只测"只有浏览器才能验"的东西</title>
+<style>
+:root{--bg:#0f1116;--card:#171a21;--line:#252a34;--fg:#e6e9ef;--dim:#8b93a3;--ok:#3ddc84;--warn:#ffb020;--bad:#ff5c5c;--run:#4a9eff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.65 "Segoe UI","Microsoft YaHei",system-ui,sans-serif}
+header{position:sticky;top:0;background:var(--bg);border-bottom:1px solid var(--line);padding:12px 16px;z-index:9}
+h1{font-size:16px;margin:0 0 3px}
+.sub{color:var(--dim);font-size:12.5px}
+main{padding:14px 16px 80px;max-width:920px;margin:0 auto}
+section{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:12px 14px;margin-bottom:12px}
+h2{font-size:14.5px;margin:0 0 8px;color:var(--run)}
+.line{display:flex;gap:9px;align-items:flex-start;padding:4px 0;border-bottom:1px dashed #20242c;font-size:14px}
+.line:last-child{border-bottom:none}
+.mark{font-weight:700;min-width:46px;font-size:13px}
+.P{color:var(--ok)}.F{color:var(--bad)}.W{color:var(--warn)}.I{color:var(--dim)}
+.det{color:var(--dim);font-size:12.5px;margin-left:26px;word-break:break-all}
+button{font:inherit;background:#22304a;color:var(--fg);border:1px solid #2f4468;border-radius:8px;padding:8px 13px;cursor:pointer}
+button:hover{background:#2b3d5e}
+button.big{width:100%;padding:13px;font-size:16px;background:#1d4a34;border-color:#2c6b4a}
+input,select{font:inherit;background:#0d1015;color:var(--fg);border:1px solid var(--line);border-radius:7px;padding:7px 9px}
+input[type=text],input[type=password]{width:100%}
+.grid{display:grid;gap:8px;grid-template-columns:1fr 1fr}
+@media(max-width:560px){.grid{grid-template-columns:1fr}}
+pre{background:#0d1015;border:1px solid var(--line);border-radius:8px;padding:10px;max-height:300px;overflow:auto;font-size:12.5px;white-space:pre-wrap;color:#b9c2d0}
+.tip{color:var(--dim);font-size:12.5px;margin-top:6px}
+.badge{display:inline-block;font-size:11.5px;padding:1px 7px;border-radius:9px;border:1px solid var(--line);color:var(--dim)}
+</style></head><body>
+<header>
+  <h1>浏览器自检 · 一键</h1>
+  <div class="sub">只测"Node 里验不了"的部分：存储 / 压缩 / 下载 / 文件读取 / <b>真实 API 连通性</b>。页面不写任何存储，密钥不落盘。</div>
+</header>
+<main>
+
+<section>
+  <h2>A. 存储能力（这条一直待确认）</h2>
+  <div id="secA"></div>
+</section>
+
+<section>
+  <h2>B. 压缩能力 + 真实容量测算</h2>
+  <div id="secB"></div>
+  <div class="tip">用浏览器自己的 CompressionStream('deflate-raw') 复算，验证 Node 里那个"5MB 能装多少题"。</div>
+</section>
+
+<section>
+  <h2>C. 文件 / 下载 / 拖放 能力</h2>
+  <div id="secC"></div>
+  <div class="grid" style="margin-top:8px">
+    <button onclick="testDownload()">测一下"能不能下载文件"</button>
+    <button onclick="document.getElementById('pick').click()">测一下"能不能选 docx 并解析"</button>
+  </div>
+  <input type="file" id="pick" accept=".docx" style="display:none">
+  <div id="secC2"></div>
+</section>
+
+<section>
+  <h2>D. 解析器在浏览器里的回归（同一份样卷、同一批断言）</h2>
+  <div id="secD"></div>
+  <div class="tip">Node 里已 49/49 通过；这里确认浏览器行为一致（两边都用原生 <code>TextDecoder</code> + <code>DecompressionStream</code>）。</div>
+</section>
+
+<section>
+  <h2>E. 纯文本 txt 的编码兼容 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">这一节是<b>只有真浏览器才能给</b>的证据：GBK 解出来对不对，取决于浏览器自己的 ICU 码表，Node 侧那 205 条断言替代不了它。页内已内置同一份样卷的三种编码（UTF-8 / UTF-8+BOM / GBK），点开即测，不需要你选文件。</div>
+  <div id="secTxt"></div>
+</section>
+
+<section>
+  <h2>F. 真实 API 连通性 <span class="badge">需要你的 Key</span></h2>
+  <div class="tip" style="margin:0 0 8px">这是唯一必须"真发一次请求"才能验的：浏览器发出去的跨域请求通不通、<code>response_format: json_object</code> 各家支不支持。<b>Key 只在本页内存里用于本次请求，不写任何存储、不发给第三方。</b></div>
+  <div class="grid">
+    <select id="prov"></select>
+    <input type="password" id="key" placeholder="粘贴 API Key（不回显）">
+  </div>
+  <div style="margin-top:8px"><button onclick="testAi()">开始测试（会发 2 次最小请求）</button></div>
+  <div id="secE"></div>
+</section>
+
+<section>
+  <h2>G. 校对入库面板 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">这一节验的是<b>只有浏览器能给</b>的部分：触屏点击目标够不够大、筛选后界面上是不是真的只剩待校对行、以及在<b>真实 localStorage</b> 上"取消不写、确认才写"。面板会挂在一个屏幕外的容器里，不影响本页阅读。</div>
+  <div id="secG"></div>
+</section>
+
+<section>
+  <h2>H. 结构化 txt 往返 + 卷册 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">验的是"导出成文本 → 再导入回来"在<b>浏览器里</b>是否逐字段无损、损坏文本会不会被拦下、以及失败时<b>真实 localStorage</b> 是不是一个字节都没动。同时确认这两个模块内联进单文件 HTML 后能正常挂载。</div>
+  <div id="secH"></div>
+</section>
+
+<section>
+  <h2>I. 关掉/刷新浏览器后数据还在吗 <span class="badge">两阶段·需要刷新一次</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验「重启浏览器后试卷、题目与设置仍在」，而且 <b>localStorage 与 IndexedDB 两条路径各验一次</b>。<br>
+    只有"重新加载过页面"才算数 —— 同一次加载里读写两次证明不了持久化。所以它是<b>两阶段</b>的：<br>
+    ① 第一次点开本页 → 写入探针（小记录进 localStorage、2000 字符的大记录进 IndexedDB），然后停下；<br>
+    ② <b>你刷新本页</b>（F5 / Ctrl+R）→ 本节复核数据是否还在，并检查落点索引与 <code>keys()</code>，最后自动清理。
+  </div>
+  <div id="secI"></div>
+</section>
+
+<section>
+  <h2>J. 快捷面板：行为开关 / 展示时机 / 分数线 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验的是<b>只有浏览器能给</b>的部分：按钮与输入框的<b>触屏点击目标够不够大</b>（≥44px）、
+    点一下是不是真的改了配置、非法值会不会被拦下并给出提示。
+    <b>答案会不会泄露</b>那部分在 <code>core/flow.js</code> 里是纯函数，Node 侧已穷举断言；
+    这里只验"界面把点击正确转成了配置改动"。
+  </div>
+  <div id="secJ"></div>
+</section>
+
+<section>
+  <h2>K. 作答界面与触屏 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验的是<b>只有浏览器能给</b>的部分：<b>375px 手机宽度下会不会横向滚动</b>、
+    <b>点击目标是否 ≥44px</b>、四种题型是不是都画出了对应控件、
+    以及<b>在底部面板改设置后不跳页就立刻生效</b>（改完直接提交下一题，答案区当场出现）。<br>
+    <span style="color:#ffb020">建议</span>：按 F12 打开设备工具栏切到手机宽度再看一眼，本节的容器就是按 375px 卡出来的。
+  </div>
+  <div id="secK"></div>
+</section>
+
+<section>
+  <h2>L. 作答进度：刷新后还在吗 <span class="badge">两阶段·需要刷新一次</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验「作答内容与当前题号写进本地存储、刷新后能恢复、交卷后清理干净」。<br>
+    只有"重新加载过页面"才算数 —— 同一次加载里读写两次证明不了持久化。所以它是<b>两阶段</b>的：<br>
+    ① 第一次点开本页 → 写入一份进度探针（<b>真实 localStorage</b>，键名走试卷命名空间规则），然后停下；<br>
+    ② <b>你刷新本页</b>（F5 / Ctrl+R）→ 本节复核：作答与题号是否原样恢复、恢复后能否继续答、
+    交卷后键是否被清掉，最后自动清理。
+  </div>
+  <div id="secL"></div>
+</section>
+
+<section>
+  <h2>M. 错题本：分卷归集 / 逐题详情 / 跳回原卷 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节走**真数据**：拿内置样卷真答一遍 → 真交卷 → 真收集进错题本，再把它挂到 375px 宽的容器里验
+    「按卷分组、计数与判分一致、点一条能看到原题/参考答案/解析、点『跳到这道题』能精确回到那一题」。<br>
+    还专门验一条硬规矩：<b>原题一律从试卷现读</b> —— 题干改过会显示卷子里的最新版并标出提醒，
+    题被删掉则如实说明并<b>禁用跳转</b>（绝不拿错题本里的旧快照冒充原题）。
+  </div>
+  <div id="secM"></div>
+</section>
+
+<section>
+  <h2>N. 删卷级联询问：两条路径都不留孤儿 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节走**真存储**（真 localStorage）：造两套临时卷 → 各挂一份错题本与作答记录 →
+    用真实弹窗分别选『否』（保留记录）与『是』（一并删除），再断言
+    「卷没了 / 记录留下且有『已删除试卷』归属标识 / 键扫描零孤儿 / 级联路径零残留」。<br>
+    验的正是只有浏览器能给的那部分：弹窗的<b>遮罩层级</b>、<b>触屏点击目标 ≥44px</b>、
+    以及"点遮罩空白处 = 取消、不点就不写盘"。末尾会把两套临时卷与残留记录**全部清理掉**。
+  </div>
+  <div id="secN"></div>
+</section>
+
+<section>
+  <h2>O. AI 密钥：刷新后还在吗 + 能力表标注 <span class="badge">两阶段·需要刷新一次</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验「填进去的 Key 在**真浏览器刷新**之后仍然保留，并且真的能用于调用」。<br>
+    只有"重新加载过页面"才算数 —— 同一次加载里读写两次证明不了持久化。所以它是<b>两阶段</b>的：<br>
+    ① 第一次点开本页 → 通过界面真的填一把探针 Key（写的**真实 localStorage**，独立命名空间 <code>secret</code>），然后停下；<br>
+    ② <b>你刷新本页</b>（F5 / Ctrl+R）→ 本节复核：Key 是否还在（遮罩显示）、<code>readKey</code> 能不能读回原文、
+    能力表里"不可直连"的家是否被明确标注、界面是否只显示遮罩（DOM 里不留原文），最后自动清理。
+  </div>
+  <div id="secO"></div>
+</section>
+
+<section>
+  <h2>P. 单题智能生成：解析 / 变式题 / 难度 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验「单题按钮点一次只发一次请求」「结构不合格的结果**不会**落到草案上」「三类结果各自写对地方」。
+    联网部分用**注入的假 fetch** 顶替（不花钱、可重复）：真 Key 的真调用由
+    <code>node verify/real-ai.js</code> 负责（读环境变量，人工触发）。<br>
+    想在这里看真调用：先去「校对面板」填一把 Key，再用那个页面的「单题智能」按钮。
+  </div>
+  <div id="secP"></div>
+</section>
+
+<section>
+  <h2>Q. 整卷点评与举一反三 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验两个**场景化**能力：交卷后的「整卷总评」（**先弹消耗确认窗**，未确认不发请求；
+    总评必须引用本轮真实得分/错题，套话会被拒）与错题本的「举一反三」（**不弹确认窗**，
+    一次点击一次请求；生成的新题能一键加进那套卷并出现在对应题型分组里）。<br>
+    联网部分用注入的假 fetch（不花钱、可重复）；真 Key 的真调用由 <code>node verify/real-ai.js</code> 负责。
+  </div>
+  <div id="secQ"></div>
+</section>
+
+<section>
+  <h2>R. 容错与提示：脏输出 / 错误分类 / 批量消耗确认 <span class="badge">真浏览器专属</span></h2>
+  <div class="tip" style="margin:0 0 8px">
+    这一节验三件事：<b>脏输出容错</b>（12 类里挑几类在浏览器里再过一遍）、
+    <b>三类失败的可操作提示</b>（断网 / 密钥错 / 模型不支持 JSON 模式）、
+    以及<b>批量先确认</b>（未确认零请求、确认后逐题跑；单题不弹窗）。<br>
+    「估算 token 偏差」用真调用实测：命令行 <code>node verify/real-ai.js</code> 会把 estimate/actual
+    写进 <code>verify/real-ai-last.json</code>（本次实测单题 5.1% / 总评 8.6% / 批量 21.9%，阈值 60%）。
+  </div>
+  <div id="secR"></div>
+</section>
+
+<section>
+  <h2>汇总</h2>
+  <div class="tip" style="margin:0 0 8px">
+    下面每条结果的标题里带 <code>**…**</code> 是<b>故意的</b>：那是 markdown 记号，方便你点「复制全部结果」
+    直接贴给我，我这边一眼能看出重点。<b>产品界面（答题 / 导入 / 错题本）里没有任何 markdown 记号</b> ——
+    那三条真浏览器流水线各有一条「界面文本里没有漏出来的 `**`」判定在守着。
+  </div>
+  <div id="sum"></div>
+  <div style="margin-top:10px"><button class="big" onclick="copyAll()">复制全部结果（贴给我就行）</button></div>
+</section>
+
+</main>
+<script>
+/* ========== 内联：解析核心（顺序不可颠倒！） ========== */
+__ZIP_CORE__
+__DOCX_CORE__
+__TEXT_CORE__
+__SEGMENT_CORE__
+__PARSER_CORE__
+/* ========== 内联：结构工厂 / 存储 / 默认配置（后面几个都依赖它们） ========== */
+__SCHEMA_CORE__
+__DATA_CORE__
+__QUIZ_CORE__
+__FLOW_CORE__
+__WRONG_CORE__
+/* ========== 内联：卷册 / 结构化文本格式（G、H 节要用） ========== */
+__EXAMS_CORE__
+__TEXT_FORMAT_CORE__
+/* ========== 内联：校对面板 ========== */
+__REVIEW_CORE__
+__REVIEW_UI__
+/* ========== 内联：快捷面板（J 节用） ========== */
+__QUICK_UI__
+/* ========== 内联：作答界面（K 节用） ========== */
+__ATTEMPT_CORE__
+__ATTEMPT_VIEW__
+/* ========== 内联：错题本视图（M 节用） ========== */
+__WRONG_VIEW__
+/* ========== 内联：删卷询问弹窗（N 节用） ========== */
+__DELETE_DIALOG__
+/* ========== 内联：AI 核心 ========== */
+__AI_CORE__
+/* ========== 内联：AI 密钥与能力表面板（O 节用） ========== */
+__AI_SETTINGS__
+/* ========== 内联：单题智能面板（P 节用） ========== */
+__AI_SINGLE__
+/* ========== 内联：场景化 AI 面板（Q 节用：整卷总评 / 举一反三） ========== */
+__AI_SCENE__
+/* ========== 内联：内置样卷 ========== */
+const SAMPLE_B64 = "__SAMPLE_B64__";
+/* ========== 内联：txt 三种编码的同一份样卷（E 节用） ========== */
+__TXT_FIXTURES__
+
+/* ==================== 报告器 ==================== */
+let PASS=0, FAIL=0, WARN=0;
+const ALL=[];
+function rec(box, level, text, detail){
+  const box2 = document.getElementById(box);
+  const cls = level==='PASS'?'P':(level==='FAIL'?'F':(level==='WARN'?'W':'I'));
+  const tag = level==='PASS'?'✓ PASS':(level==='FAIL'?'✗ FAIL':(level==='WARN'?'! WARN':'· INFO'));
+  const d = document.createElement('div');
+  d.className='line';
+  d.innerHTML = '<span class="mark '+cls+'">'+tag+'</span><span>'+text+'</span>';
+  box2.appendChild(d);
+  if (detail){ const e=document.createElement('div'); e.className='det'; e.textContent=detail; box2.appendChild(e); }
+  if (level==='PASS') PASS++; else if (level==='FAIL') FAIL++; else if (level==='WARN') WARN++;
+  ALL.push('['+level+'] '+text+(detail?'  → '+detail:''));
+}
+const P=(b,t,d)=>rec(b,'PASS',t,d);
+const F=(b,t,d)=>rec(b,'FAIL',t,d);
+const W=(b,t,d)=>rec(b,'WARN',t,d);
+const I=(b,t,d)=>rec(b,'INFO',t,d);
+function check(box, cond, t, d){ cond ? P(box,t,d) : F(box,t,d); }
+/* 值相等断言 + 等一小会儿（等异步保存落盘）：只给 O 节用，避免到处手写 JSON.stringify */
+function eq0(box, actual, expect, t){ const a=JSON.stringify(actual), e=JSON.stringify(expect);
+  a===e ? P(box,t,e) : F(box,t+'   期望='+e, '实际='+a); }
+function sleep0(ms){ return new Promise(function(r){ setTimeout(r, ms||0); }); }
+function b64ToU8(b64){ const bin=atob(b64); const u=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++)u[i]=bin.charCodeAt(i); return u; }
+function u8ToB64(u8){ let s=''; for(let i=0;i<u8.length;i++) s+=String.fromCharCode(u8[i]); return btoa(s); }
+
+/* ==================== A. 存储 ==================== */
+(function(){
+  const b='secA';
+  I(b,'protocol = '+location.protocol+'   origin = '+String(location.origin));
+  try{
+    const k='__probe_'+Date.now();
+    localStorage.setItem(k,'v1');
+    const okread = localStorage.getItem(k)==='v1';
+    localStorage.removeItem(k);
+    check(b, okread, 'localStorage：可写可读');
+  }catch(e){ F(b,'localStorage：被禁止', e.name+': '+e.message); }
+  try{ sessionStorage.setItem('p','1'); P(b,'sessionStorage：可用'); }
+  catch(e){ F(b,'sessionStorage：被禁止', e.name); }
+  try{
+    localStorage.setItem('__shared_probe__','x');
+    W(b,'所有本地 HTML 共享同一存储空间','→ 必须用 exam_<试卷ID>_ 前缀隔离（否则两份分享来的试卷会串数据）');
+  }catch(e){}
+
+  // IndexedDB
+  window.__idbResult = null;
+  try{
+    const q = indexedDB.open('probeDB',1);
+    q.onsuccess = function(){
+      window.__idbResult = true;
+      P(b,'IndexedDB：可用', 'version='+q.result.version);
+      finishSum();
+    };
+    q.onerror = function(){
+      window.__idbResult = false;
+      F(b,'IndexedDB：不可用', (q.error&&q.error.name)+': '+(q.error&&q.error.message||''));
+      finishSum();
+    };
+    q.onblocked = function(){ W(b,'IndexedDB：被阻塞'); finishSum(); };
+    setTimeout(function(){
+      if (window.__idbResult===null){ W(b,'IndexedDB：3 秒无响应','可能被环境限制'); finishSum(); }
+    },3000);
+  }catch(e){ F(b,'IndexedDB：抛异常', e.name+': '+e.message); finishSum(); }
+
+  // 真实配额
+  if (navigator.storage && navigator.storage.estimate){
+    navigator.storage.estimate().then(function(est){
+      I(b,'浏览器上报配额', 'quota≈'+(est.quota/1048576).toFixed(1)+' MB, 已用≈'+(est.usage/1024).toFixed(1)+' KB');
+      finishSum();
+    }).catch(function(){});
+  }
+})();
+
+/* ==================== B. 压缩 + 容量 ==================== */
+async function testCompress(){
+  const b='secB';
+  if (typeof CompressionStream==='undefined'){ F(b,'CompressionStream 不可用','→ 压缩降级方案要换成内联的小型 deflate 实现'); finishSum(); return; }
+  P(b,'CompressionStream 可用');
+  // 造 300 道高熵题（和 Node 验证台同构）
+  let seed=12345; const rnd=()=>{ seed|=0; seed=(seed+0x6D2B79F5)|0; let t=Math.imul(seed^(seed>>>15),1|seed); t=(t+Math.imul(t^(t>>>7),61|t))^t; return ((t^(t>>>14))>>>0)/4294967296; };
+  const pool='的一是在不了有和人这中大为上个国我以要他时来用们生到作地于出就分对成会可主发年动同工也能下过子说产种面而方后多定行学法所民得经十三之进着等部度家电力里如水化高自二理起小物现实加量都两体制机当使点从业本去把性好应开它合还因由其些然前外天政四日那社义事平形相全表间样与关各重新线内数正心反你明看原又么利比或但质气第向道命此变条只没结解问意建月公无系军很情者最立代想已通并提直题党程展五果料象员革位入常文总次品式活设及管特件长求老头基资边流路级少图山统接知较将组见计别她手角期根论运农指几九区强放决西被干做必战先回则任取据处队南给色光门即保治北造百规热领七海口东导器压志世金增争济阶油思术极交受联什认六共权收证改清己美再采转更单风切打白教速花带安场身车例真务具万每目至达走积示议声报斗完类八离华名确才科张信马节话米整空元况今集温传土许步群广石记需段研界拉林律叫且究观越织装影算低持音众书布复容儿须际商非验连断深难近矿千周委素技备半办青省列习响约支般史感劳便团往酸历市克何除消构府称太准精值号率族维划选标写存候毛亲快效斯院查江型眼王按格养易置派层片始却专状育厂京识适属圆包火住调满县局照参红细引听该铁价严龙飞';
+  const word=n=>{ let s=''; for(let i=0;i<n;i++) s+=pool[Math.floor(rnd()*pool.length)]; return s; };
+  const qs=[];
+  for(let i=0;i<300;i++) qs.push({ id:'h'+i, type:['单选','多选','判断','简答'][i%4], stem:word(38)+'？',
+    options:[{label:'A',text:word(24)},{label:'B',text:word(24)},{label:'C',text:word(24)},{label:'D',text:word(24)}],
+    answer:'B', explanation:word(46), keywords:[{text:word(4)},{text:word(4)},{text:word(4)}] });
+  const json = JSON.stringify({v:1,questions:qs});
+  const rawBytes = new TextEncoder().encode(json).length;
+  const comp = await new Response(new Blob([json]).stream().pipeThrough(new CompressionStream('deflate-raw'))).arrayBuffer();
+  const compBytes = comp.byteLength;
+  const perRaw = rawBytes/qs.length, perComp = compBytes/qs.length;
+  I(b,'高熵样本（300 题）每题原始', Math.round(perRaw)+' 字节');
+  I(b,'每题压缩后', Math.round(perComp)+' 字节   压缩率 '+(compBytes/rawBytes).toFixed(3));
+  I(b,'5MB 能装', '原始约 '+Math.floor(5242880/perRaw)+' 题 / 压缩后约 '+Math.floor(5242880/perComp)+' 题');
+  check(b, compBytes < rawBytes, '压缩生效');
+  finishSum();
+}
+testCompress();
+
+/* ==================== C. 文件 / 下载 ==================== */
+(function(){
+  const b='secC';
+  check(b, typeof FileReader!=='undefined', 'FileReader 可用');
+  check(b, typeof Blob!=='undefined', 'Blob 可用');
+  check(b, typeof URL.createObjectURL==='function', 'URL.createObjectURL 可用（导出分享要用）');
+  check(b, 'download' in document.createElement('a'), 'a[download] 属性可用（下载落盘要用）');
+  check(b, typeof TextDecoder!=='undefined', 'TextDecoder 可用（读 docx 里的 XML 要用）');
+  check(b, typeof DecompressionStream!=='undefined', 'DecompressionStream 可用（解 docx 的 deflate 要用）');
+  check(b, typeof DataTransfer!=='undefined' || 'ondrop' in document, '拖放能力存在');
+  finishSum();
+})();
+
+function testDownload(){
+  try{
+    const blob = new Blob(['自检：如果你能看到这个文件，说明下载功能正常。\n'],{type:'text/plain'});
+    const a=document.createElement('a');
+    a.href=URL.createObjectURL(blob); a.download='自检_下载测试.txt';
+    document.body.appendChild(a); a.click(); a.remove();
+    P('secC2','已触发下载','去「下载」文件夹看有没有 自检_下载测试.txt');
+  }catch(e){ F('secC2','下载触发失败', e.name+': '+e.message); }
+  finishSum();
+}
+
+document.getElementById('pick').onchange=function(e){
+  const f=e.target.files[0]; if(!f) return;
+  const fr=new FileReader();
+  fr.onload=async function(){
+    try{
+      const r=await QuizParser.parseDocx(fr.result);
+      P('secC2','选中的 docx 解析成功', f.name+' → '+r.stats.total+' 题  '+JSON.stringify(r.stats.byType));
+      P('secC2','  文本框段落数', String(r.meta.textBoxParagraphs));
+      const kw = r.questions.filter(q=>q.type==='简答').map(q=>q.keywords.length).join('/');
+      I('secC2','  各简答题关键词数', kw);
+    }catch(err){ F('secC2','docx 解析失败', err.message); }
+    finishSum();
+  };
+  fr.readAsArrayBuffer(f);
+};
+
+/* ==================== D. 解析器浏览器回归 ==================== */
+(async function(){
+  const b='secD';
+  try{
+    const u8=b64ToU8(SAMPLE_B64);
+    const r=await QuizParser.parseDocx(u8.buffer.slice(u8.byteOffset,u8.byteOffset+u8.byteLength));
+    check(b, r.stats.total===10, '总题数 = 10', String(r.stats.total));
+    check(b, JSON.stringify(r.stats.byType)==='{"单选":2,"多选":1,"判断":4,"简答":3}', '题型分布正确', JSON.stringify(r.stats.byType));
+    check(b, r.meta.textBoxParagraphs>=3, '文本框段落被解析出来', String(r.meta.textBoxParagraphs));
+    const q7=r.questions[6], q8=r.questions[7], q9=r.questions[8];
+    check(b, q7.keywords.map(k=>k.text).join(',')==='SYN,SYN+ACK,ACK', '加粗关键词全抓到', q7.keywords.map(k=>k.text+'['+k.via+']').join('、'));
+    check(b, q8.keywords.map(k=>k.text).join(',')==='TLS/SSL,443,数字证书', '高亮关键词全抓到', q8.keywords.map(k=>k.text).join('、'));
+    check(b, q9.keywords.map(k=>k.text).join(',')==='本地DNS服务器,根域名服务器,服务器地址', '字体颜色关键词全抓到', q9.keywords.map(k=>k.text).join('、'));
+    check(b, r.questions[5].judgeValue===null && r.questions[5].review.length>0, '歧义判断题被标"待校对"');
+    check(b, r.questions[9].inTextBox===true, '文本框里的题被识别');
+    check(b, r.questions[1].answer==='A', '无冒号的【答案】A 也能识别');
+    const rt=QuizParser.parseText('【单选】1. 1+1=?\nA. 1\nB. 2\n答案：B\n【判断】2. 天是蓝的。（　）\n答案：对\n');
+    check(b, rt.stats.total===2, 'txt 通道也能切题', String(rt.stats.total));
+  }catch(e){ F(b,'解析器在浏览器里跑挂了', e.message); }
+  finishSum();
+})();
+
+/* ==================== E. txt 编码兼容（真浏览器专属） ==================== */
+(async function(){
+  const b='secTxt';
+  if (typeof TextDecoder==='undefined'){ F(b,'TextDecoder 不可用，无法测编码'); finishSum(); return; }
+
+  // 先确认浏览器自己真的支持 GBK 家族，且码表是对的（不是空壳）
+  let gbkOK=false, gbkSample='';
+  try { gbkSample=new TextDecoder('gbk',{fatal:true}).decode(new Uint8Array([0xC4,0xE3,0xBA,0xC3])); gbkOK=true; }
+  catch(e){ gbkSample=e.message; }
+  check(b, gbkOK, '浏览器支持 TextDecoder("gbk", {fatal:true})', gbkSample);
+  check(b, gbkSample==='你好', '  且解出来确实是「你好」（码表正确）', JSON.stringify(gbkSample));
+  let gb18030OK=false;
+  try { new TextDecoder('gb18030',{fatal:true}); gb18030OK=true; } catch(e){}
+  check(b, gb18030OK, '浏览器也支持 TextDecoder("gb18030")');
+
+  const files=[['UTF-8 无 BOM','utf8','utf-8'],['UTF-8 带 BOM','utf8bom','utf-8-bom'],['GBK（记事本 ANSI）','gbk','gbk']];
+  const got=[];
+  for (const f of files){
+    const label=f[0], bytes=b64ToU8(TXT_FIX[f[1]]), wantEnc=f[2];
+    const d=QuizParser.decodeAuto(bytes);
+    check(b, d.encoding===wantEnc, label+'：编码判定 = '+wantEnc, '实际 '+d.encoding+'   tried='+JSON.stringify(d.tried));
+    check(b, d.replaced===0, label+'：零解码损失 replaced=0', String(d.replaced));
+    check(b, (d.text.match(/\uFFFD/g)||[]).length===0, label+'：解码文本里一个乱码替换符都没有');
+    check(b, d.text.charAt(0)!=='\uFEFF', label+'：BOM 没有残留进正文');
+    const r=await QuizParser.parseTxtBytes(bytes);
+    got.push(r);
+    check(b, r.stats.total===4, label+'：切出 4 道题', JSON.stringify(r.stats.byType));
+  }
+
+  const sig=r=>r.questions.map(function(q){
+    return q.type+'|'+q.stem+'|'+(q.options||[]).map(function(o){return o.label+':'+o.text;}).join(',')+
+           '|'+q.answer+'|'+q.judgeValue+'|'+(q.keywords||[]).map(function(k){return k.text+'['+k.via+']';}).join(',');
+  }).join('\n');
+
+  check(b, sig(got[0])===sig(got[1]), 'UTF-8 与 UTF-8+BOM 解出完全相同的题');
+  check(b, sig(got[0])===sig(got[2]), 'UTF-8 与 GBK 解出完全相同的题  ← 这条就是"无乱码"的硬证据',
+        '若为 FAIL，说明浏览器的 GBK 码表与预期不符，请把这一页的结果发我');
+  check(b, JSON.stringify(got[0].stats.byType)==='{"单选":1,"多选":1,"判断":1,"简答":1}',
+        '题型分布正确：单选1/多选1/判断1/简答1', JSON.stringify(got[0].stats.byType));
+
+  const q1=got[0].questions[0], q2=got[0].questions[1], q3=got[0].questions[3];
+  check(b, (q1.options||[]).length===4 && (q1.answerLetters||[]).join(',')==='B', '单选：4 个选项 + 答案 B 都抽出', (q1.options||[]).map(function(o){return o.label+':'+o.text;}).join(' '));
+  check(b, (q2.answerLetters||[]).join(',')==='A,B', '半角 [多选] 标记被识别，答案 AB 正确');
+  check(b, got[0].questions[2].judgeValue===true, '判断题答案 √ 归一为 true');
+  check(b, (q3.keywords||[]).length>=2, '简答在无样式时生成了兜底关键词', (q3.keywords||[]).map(function(k){return k.text;}).join('、'));
+  check(b, (q3.keywords||[]).every(function(k){return k.via==='自动(需校对)';}), '  每一条都标「自动(需校对)」，不伪装成人工标记');
+  check(b, (q3.review||[]).join(' ').indexOf('需校对')>=0, '  review 明确要求人工校对', (q3.review||[]).join('；'));
+
+  I(b,'说明：本节用的是浏览器自己的 TextDecoder（ICU），是 Node 侧断言无法替代的那部分证据。');
+  finishSum();
+})();
+
+/* ==================== F. 真实 API 连通性 ==================== */
+(function(){
+  const sel=document.getElementById('prov');
+  Object.keys(AiCore.PROVIDERS).forEach(function(k){
+    const p=AiCore.PROVIDERS[k];
+    const o=document.createElement('option');
+    o.value=k; o.textContent=p.label+(p.cors.indexOf('❌')>=0?'（已知不可直连）':'');
+    sel.appendChild(o);
+  });
+  sel.value='dashscope';
+})();
+
+async function probe(provider, apiKey, jsonMode){
+  const t0=performance.now();
+  const req=AiCore.buildChatRequest(provider,{
+    apiKey:apiKey, user:'只输出JSON，不要任何其他文字：{"ok":true,"note":"连通性测试"}',
+    jsonMode:jsonMode, maxTokens:64
+  });
+  try{
+    const resp=await fetch(req.url,{method:'POST',headers:req.headers,body:JSON.stringify(req.body)});
+    const ms=Math.round(performance.now()-t0);
+    const text=await resp.text();
+    return { ok:resp.ok, status:resp.status, ms:ms, text:text };
+  }catch(e){
+    return { ok:false, netError:true, ms:Math.round(performance.now()-t0),
+             errName:e.name, errMsg:e.message, cls:AiCore.classifyError(e,0) };
+  }
+}
+
+async function testAi(){
+  const b='secE';
+  document.getElementById(b).innerHTML='';
+  const prov=document.getElementById('prov').value;
+  const key=document.getElementById('key').value.trim();
+  if(!key){ F(b,'没有填 Key','先在上面粘贴 API Key'); finishSum(); return; }
+  I(b,'供应商 / 模型', prov+' / '+AiCore.PROVIDERS[prov].models[0]);
+
+  // 探针 1：带 JSON 模式
+  const r1=await probe(prov,key,true);
+  if(r1.netError){
+    F(b,'【带 JSON 模式】请求发不出去', (r1.cls&&r1.cls.kind)+' — '+(r1.cls&&r1.cls.text)+'  （'+r1.ms+'ms）');
+    I(b,'  处理建议', (r1.cls&&r1.cls.hint)+'');
+    I(b,'  原始错误', r1.errName+': '+r1.errMsg);
+  }else if(r1.ok){
+    P(b,'【带 JSON 模式】HTTP 200 通了（CORS 没问题）','耗时 '+r1.ms+' ms');
+  }else{
+    F(b,'【带 JSON 模式】HTTP '+r1.status, '耗时 '+r1.ms+' ms');
+    const c=AiCore.classifyError(null,r1.status);
+    I(b,'  分类 / 建议', c.text+'  →  '+c.hint);
+    I(b,'  服务端返回片段', r1.text.slice(0,200));
+  }
+
+  // 从 200 响应里取 content 并试解析
+  if(r1.ok){
+    try{
+      const j=JSON.parse(r1.text);
+      const content=(j.choices&&j.choices[0]&&j.choices[0].message&&j.choices[0].message.content)||'';
+      I(b,'  模型原始输出', content.slice(0,160));
+      const parsed=AiCore.safeParseJson(content);
+      check(b, parsed.ok, '模型输出能被解析成 JSON', '策略='+parsed.strategy+(parsed.fixes&&parsed.fixes.length?(' 修复='+parsed.fixes.join('/')):''));
+      if(parsed.ok) I(b,'  解析出的字段', JSON.stringify(parsed.value).slice(0,160));
+    }catch(e){ F(b,'  响应整体不是 JSON', e.message); }
+  }
+
+  // 探针 2：不带 JSON 模式（用来判断 400 是不是 json_object 引起的）
+  const r2=await probe(prov,key,false);
+  if(r2.netError) I(b,'【不带 JSON 模式】也没发出去', r2.errName+': '+r2.errMsg);
+  else if(r2.ok) P(b,'【不带 JSON 模式】HTTP 200','耗时 '+r2.ms+' ms');
+  else {
+    W(b,'【不带 JSON 模式】HTTP '+r2.status, '耗时 '+r2.ms+' ms');
+    I(b,'  片段', r2.text.slice(0,160));
+  }
+  if(!r1.netError && !r1.ok && r1.status===400 && r2.ok){
+    W(b,'诊断：JSON 模式是 400 的原因','→ 该供应商/模型不支持 response_format: json_object，实现时要提供"关掉 JSON 模式 + 靠容错解析"的降级开关');
+  }
+  const key2=document.getElementById('key'); key2.value='';
+  I(b,'已清空输入框里的 Key（页面不落盘任何密钥）');
+  finishSum();
+}
+
+/* ==================== G. 校对入库面板（真浏览器专属） ==================== */
+(async function(){
+  const b='secG';
+  let host=null;
+  try{
+    if (typeof ReviewCore==='undefined' || typeof ReviewPanel==='undefined' || typeof DataCore==='undefined'){
+      F(b,'ReviewCore / ReviewPanel / DataCore 没有内联进本页'); finishSum(); return;
+    }
+    const NS='selftestG_'+Date.now();
+    const store=DataCore.createStore({small:window.localStorage,large:null,namespace:NS});
+    function snap(){
+      const o={};
+      for(let i=0;i<localStorage.length;i++){
+        const k=localStorage.key(i);
+        if(k && k.indexOf(NS+'::')===0) o[k]=localStorage.getItem(k);
+      }
+      return JSON.stringify(o);
+    }
+
+    // 屏幕外但**参与布局**的容器：getBoundingClientRect 才能给出真实高度
+    host=document.createElement('div');
+    host.style.cssText='position:fixed;left:-99999px;top:0;width:390px;height:700px;overflow:hidden';
+    document.body.appendChild(host);
+
+    /* ---------- 阶段一：交互（内置 docx 样卷：10 题，含样式关键词与一道待校对判断题） ---------- */
+    const docxParsed=await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+    const d1=ReviewCore.createDraft(docxParsed,{title:'自检样卷(docx)'});
+    check(b,d1.ok,'阶段一：从内置 docx 样卷建立草案');
+    const st1=ReviewCore.reviewStats(d1.draft);
+    I(b,'docx 样卷统计',st1.total+' 题，其中待校对 '+st1.needsReview+' 题');
+    const panel=ReviewPanel.mount(host,d1.draft,{store:store,title:'自检样卷(docx)'});
+
+    check(b,panel.rowCount()===st1.needsReview,
+      '「只看待校对」**默认打开**（用户要求）→ 渲染行数 = 待校对题数',panel.rowCount()+' / '+st1.needsReview);
+    const flaggedRows=host.querySelectorAll('.qp-row.is-flagged').length;
+    check(b,flaggedRows===st1.needsReview,'待校对项在界面上有显式标记',flaggedRows+' 行带标记');
+    check(b,host.querySelectorAll('.qp-badge').length>=st1.needsReview,'标记以文字徽章呈现（不只靠颜色）');
+    check(b,host.querySelectorAll(ReviewPanel.SEL.reasons).length===st1.needsReview,'待校对原因也逐行列在行内');
+    /* 量触屏尺寸前先把它关掉：开关可用 + 控件最全（下面还会再打开一次做筛选断言） */
+    panel.setOnlyReview(false);
+    check(b,panel.rowCount()===st1.total,'取消「只看待校对」→ 全部题都摆出来',panel.rowCount()+' / '+st1.total);
+
+    /* 触屏点击目标尺寸 */
+    const th=panel.touchHeights();
+    const taps=th.filter(function(x){return x.tap;});
+    const tooSmall=taps.filter(function(x){return x.h<44;});
+    check(b,taps.length>0,'面板里存在可点控件',
+      taps.length+' 个（另有 '+(th.length-taps.length)+' 个 checkbox，点击由外层 label 承担）');
+    check(b,tooSmall.length===0,'所有点击目标高度 ≥ 44px（触屏可点）',
+      tooSmall.length?('偏小的：'+tooSmall.map(function(x){return (x.cls||x.tag)+'='+x.h;}).join('、'))
+                     :('最小 '+Math.min.apply(null,taps.map(function(x){return x.h;}))+'px'));
+    const stemFont=parseFloat(getComputedStyle(panel.root.querySelector(ReviewPanel.SEL.stem)).fontSize);
+    check(b,stemFont>=16,'输入控件字号 ≥ 16px（避免 iOS 聚焦时自动放大）',stemFont+'px');
+
+    /* 一键筛选：界面上真的只剩待校对行 */
+    panel.setOnlyReview(true);
+    check(b,panel.rowCount()===st1.needsReview,'开启「只看待校对」后界面行数 = 待校对题数',
+      panel.rowCount()+' / '+st1.needsReview);
+    const shownIdx=Array.prototype.map.call(host.querySelectorAll(ReviewPanel.SEL.row),
+      function(r){return Number(r.getAttribute('data-index'));});
+    check(b,JSON.stringify(shownIdx)===JSON.stringify(ReviewCore.visibleIndices(panel.getDraft(),true)),
+      '界面显示的下标集合与逻辑层一致','DOM '+JSON.stringify(shownIdx));
+    check(b,Array.prototype.every.call(host.querySelectorAll('.qp-row'),
+      function(r){return r.classList.contains('is-flagged');}),'筛选后可见的每一行都是带标记的待校对行');
+    panel.setOnlyReview(false);
+    check(b,panel.rowCount()===st1.total,'关掉筛选后恢复显示全部题');
+
+    /* ---- 一键折叠 / 全部展开（就在「只看待校对」旁边） ---- */
+    const foldEl=host.querySelector(ReviewPanel.SEL.fold);
+    const filterEl=host.querySelector(ReviewPanel.SEL.onlyReview).closest('.qp-filter');
+    check(b,!!foldEl,'预览面板里有「一键折叠」按钮');
+    check(b,!!foldEl&&!!filterEl&&filterEl.nextElementSibling===foldEl,
+      '  它就在「只看待校对」旁边（同一个工具条、紧跟其后）');
+    check(b,!!foldEl&&foldEl.getBoundingClientRect().height>=44,
+      '  触控高度 ≥ 44px', foldEl?Math.round(foldEl.getBoundingClientRect().height)+'px':'');
+    const openCnt=function(){return Array.prototype.filter.call(
+      host.querySelectorAll(ReviewPanel.SEL.list+' details'),
+      function(d){return d.hasAttribute('open');}).length;};
+    check(b,openCnt()===st1.needsReview,'初始：展开的正是待校对那几张（其余折叠）',
+      openCnt()+' 张展开 / 待校对 '+st1.needsReview);
+    check(b,panel.foldText()===(st1.needsReview?'全部折叠':'全部展开'),
+      '  按钮标签说明"点下去会发生什么"', panel.foldText());
+    foldEl.click();
+    check(b,openCnt()===0&&panel.foldText()==='全部展开','点一下 → 全部收拢，标签变「全部展开」',
+      openCnt()+' 张展开 / '+panel.foldText());
+    foldEl.click();
+    check(b,openCnt()===st1.total&&panel.foldText()==='全部折叠','再点一下 → 全部铺开，标签变「全部折叠」',
+      openCnt()+' 张展开 / '+panel.foldText());
+    /* 只开一张时：标签必须说「全部折叠」（= 点它会收拢），点下去就得真的收拢 —— 标签不许骗人 */
+    host.querySelectorAll(ReviewPanel.SEL.list+' details')[0].setAttribute('open','open');
+    foldEl.click();
+    check(b,openCnt()===0,'只开一张时点它 → 仍是"收拢全部"（标签与动作一致）', openCnt()+' 张展开');
+
+    /* ---- 一键到底部 / 回到顶部（同一排） ---- */
+    const jumpEl=host.querySelector(ReviewPanel.SEL.jump);
+    check(b,!!jumpEl,'工具条里有「到底部」按钮');
+    check(b,!!jumpEl&&!!foldEl&&foldEl.nextElementSibling===jumpEl,'  它就在「全部折叠」旁边');
+    check(b,!!jumpEl&&jumpEl.getBoundingClientRect().height>=44,'  触控高度 ≥ 44px',
+      jumpEl?Math.round(jumpEl.getBoundingClientRect().height)+'px':'');
+    const sc=panel.scroller();
+    I(b,'滚动层','（'+(sc===host.querySelector(ReviewPanel.SEL.list)?'题卡列表':'页面')+'）内容高 '+sc.scrollHeight+' / 可视高 '+sc.clientHeight);
+    panel.jump(false);
+    check(b,jumpEl.textContent==='到底部','在顶部时按钮显示「到底部」',jumpEl.textContent);
+    jumpEl.click();
+    check(b,panel.atBottom()&&jumpEl.textContent==='回到顶部','点一下 → 到最底部，标签变「回到顶部」',
+      'atBottom='+panel.atBottom()+' / '+jumpEl.textContent);
+    jumpEl.click();
+    check(b,!panel.atBottom()&&jumpEl.textContent==='到底部','再点一下 → 回到顶部（标签与动作一致）',
+      'atBottom='+panel.atBottom()+' / '+jumpEl.textContent);
+
+    /* 在 DOM 上改题干（打字不整表重绘，失焦才刷新） */
+    const i0=ReviewCore.visibleIndices(panel.getDraft(),false)[0];
+    const row0=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+i0+'"]');
+    const stemEl=row0.querySelector(ReviewPanel.SEL.stem);
+    stemEl.value='自检改过的题干？';
+    stemEl.dispatchEvent(new Event('input',{bubbles:true}));
+    stemEl.dispatchEvent(new Event('change',{bubbles:true}));
+    check(b,panel.getDraft().questions[i0].stem==='自检改过的题干？','在题干输入框打字后草案同步更新',
+      panel.getDraft().questions[i0].stem);
+    check(b,stemEl.value==='自检改过的题干？','  失焦刷新后输入框内容没被吞掉（不整表重绘）');
+
+    /* 把待校对判断题改对 → 标记消失 */
+    let jIdx=-1;
+    panel.getDraft().questions.forEach(function(q,i){ if(jIdx<0 && q.type==='判断' && ReviewCore.needsReview(q)) jIdx=i; });
+    check(b,jIdx>=0,'docx 样卷里确实存在"待校对的判断题"（否则下面这条是空转）');
+    if(jIdx>=0){
+      const row=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+jIdx+'"]');
+      const ansEl=row.querySelector(ReviewPanel.SEL.answer);
+      ansEl.value='对';
+      ansEl.dispatchEvent(new Event('input',{bubbles:true}));
+      ansEl.dispatchEvent(new Event('change',{bubbles:true}));
+      check(b,ReviewCore.needsReview(panel.getDraft().questions[jIdx])===false,'把它改对后不再需要校对');
+      const after=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+jIdx+'"]');
+      check(b,after && !after.classList.contains('is-flagged'),'  界面上的待校对高亮消失');
+      check(b,after && after.querySelectorAll('.qp-badge').length===0,'  徽章也消失');
+      check(b,ReviewCore.visibleIndices(panel.getDraft(),true).length===st1.needsReview-1,'  筛选结果随之少一题');
+    }
+
+    /* 关键词：来源标注 + 增删都要在界面上看得见 */
+    let sIdx=-1;
+    panel.getDraft().questions.forEach(function(q,i){ if(sIdx<0 && q.type==='简答') sIdx=i; });
+    check(b,sIdx>=0,'docx 样卷里确实存在简答题');
+    if(sIdx>=0){
+      const row=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+sIdx+'"]');
+      const before=row.querySelectorAll(ReviewPanel.SEL.kw).length;
+      const vias=Array.prototype.map.call(row.querySelectorAll(ReviewPanel.SEL.kwVia),function(n){return n.textContent;});
+      check(b,before>0,'简答题渲染出关键词条目',before+' 条');
+      check(b,vias.length===before && vias.every(function(v){return !!v;}),
+        '每条关键词都标了来源（或为手动添加）',vias.join('、'));
+      check(b,vias.some(function(v){return v.indexOf('原文样式')>=0;}),'  出现了「（原文样式）」来源标注');
+
+      const inp=row.querySelector(ReviewPanel.SEL.kwInput);
+      inp.value='自检新增关键词';
+      row.querySelector(ReviewPanel.SEL.kwAdd).click();
+      const row2=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+sIdx+'"]');
+      check(b,row2.querySelectorAll(ReviewPanel.SEL.kw).length===before+1,'点「添加」后关键词多一条',
+        before+' → '+row2.querySelectorAll(ReviewPanel.SEL.kw).length);
+      const vias2=Array.prototype.map.call(row2.querySelectorAll(ReviewPanel.SEL.kwVia),function(n){return n.textContent;});
+      check(b,vias2.indexOf('手动添加')>=0,'新增那条的来源标注为「手动添加」',vias2.join('、'));
+      row2.querySelectorAll(ReviewPanel.SEL.kwDel)[0].click();
+      check(b,host.querySelector(ReviewPanel.SEL.row+'[data-index="'+sIdx+'"]')
+        .querySelectorAll(ReviewPanel.SEL.kw).length===before,'点「删除」后回到原条数');
+    }
+
+    /* 改题型下拉 */
+    const tRow=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+i0+'"]');
+    const sel=tRow.querySelector(ReviewPanel.SEL.type);
+    const beforeType=panel.getDraft().questions[i0].type;
+    sel.value=(beforeType==='判断')?'简答':'判断';
+    sel.dispatchEvent(new Event('change',{bubbles:true}));
+    check(b,panel.getDraft().questions[i0].type===sel.value,'改题型下拉后草案同步更新',
+      beforeType+' → '+panel.getDraft().questions[i0].type);
+
+    /* ---------- 阶段二：取消 → 真实 localStorage 零变化 ---------- */
+    const snapBefore=snap();
+    panel.cancel();
+    check(b,snap()===snapBefore,'阶段二：点「取消（不导入）」后 localStorage 逐字节未变');
+    check(b,snap()==='{}','  取消后该命名空间下一条记录都没有',snap());
+
+    /* ---------- 阶段三：确认入库 → 真实 localStorage 写入，改动能从导出的 JSON 看到 ---------- */
+    host.innerHTML='';
+    const parsed2=await QuizParser.parseTxtBytes(b64ToU8(TXT_FIX.gbk));
+    const d2=ReviewCore.createDraft(parsed2,{title:'自检样卷(txt)'});
+    const panel2=ReviewPanel.mount(host,d2.draft,{store:store,title:'自检样卷(txt)'});
+    const iShort=ReviewCore.visibleIndices(panel2.getDraft(),false).filter(function(i){
+      return panel2.getDraft().questions[i].type==='简答';})[0];
+    check(b,iShort>=0,'阶段三：样卷里有简答题');
+    if(iShort>=0){
+      const rowS=host.querySelector(ReviewPanel.SEL.row+'[data-index="'+iShort+'"]');
+      const ansS=rowS.querySelector(ReviewPanel.SEL.answer);
+      ansS.value='自检改过的参考答案；第二段';
+      ansS.dispatchEvent(new Event('input',{bubbles:true}));
+      ansS.dispatchEvent(new Event('change',{bubbles:true}));
+      const kwIn=host.querySelector(ReviewPanel.SEL.kwInput);
+      kwIn.value='自检新增关键词';
+      host.querySelector(ReviewPanel.SEL.kwAdd).click();
+      check(b,panel2.getDraft().questions[iShort].keywords.some(function(k){return k.text==='自检新增关键词';}),
+        '  界面上新增的关键词进了草案');
+    }
+    const res=await panel2.commit();
+    check(b,res&&res.ok,'阶段三：点「确认入库」成功',res?('examId='+res.examId):'无结果');
+    if(res&&res.ok){
+      check(b,snap()!==snapBefore,'  入库后 localStorage 确实写了东西');
+      const raw=localStorage.getItem(NS+'::exam::'+res.examId);
+      check(b,!!raw,'  卷子本体可在 localStorage 里读到');
+      const js=ReviewCore.examToJson(res.exam);
+      check(b,js.indexOf('自检改过的参考答案；第二段')>=0,'  导出的 JSON 里能看到界面上改过的参考答案');
+      check(b,js.indexOf('自检新增关键词')>=0,'  导出的 JSON 里能看到界面上新增的关键词');
+      check(b,js.indexOf('"手动"')>=0,'  新增关键词的来源=手动 也保留在 JSON 里');
+      let stored=null; try{stored=JSON.parse(raw);}catch(e){}
+      check(b,stored&&stored.questions&&stored.questions.length>0,'  存储里的卷子结构可解析',
+        stored?stored.questions.length+' 题':'解析失败');
+      check(b,stored&&stored.schemaVersion===1,'  存储里的卷子带 schemaVersion');
+    }
+    check(b,panel2.error()==='','入库后错误区为空',panel2.error());
+  }catch(e){
+    F(b,'G 节跑挂了',(e&&e.message)||String(e));
+  }
+  try{
+    if(host) host.remove();
+    const kill=[];
+    for(let i=0;i<localStorage.length;i++){ const k=localStorage.key(i); if(k&&k.indexOf('selftestG_')===0) kill.push(k); }
+    kill.forEach(function(k){ localStorage.removeItem(k); });
+    I(b,'已清理测试数据（屏幕外面的面板容器已移除）');
+  }catch(e){}
+  finishSum();
+})();
+
+/* ==================== H. 结构化 txt 往返 + 卷册（浏览器等价） ==================== */
+(async function(){
+  const b='secH';
+  try{
+    if (typeof TextFormatCore==='undefined' || typeof ExamsCore==='undefined'){
+      F(b,'TextFormatCore / ExamsCore 没有内联进本页'); finishSum(); return;
+    }
+    const parsed=await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+    const exam=SchemaCore.createExam({
+      title:'浏览器往返卷',
+      questions: parsed.questions.map(function(q){ return SchemaCore.createQuestion(q); }),
+      config:{points:{'单选':2,'简答':5}}, configLocked:true
+    },{now:'2026-09-17T14:00:00.000Z'});
+
+    const text=TextFormatCore.exportExam(exam);
+    check(b, typeof text==='string' && text.length>200, '导出得到非空文本', text.length+' 字符');
+    check(b, text.indexOf(TextFormatCore.HEADER)===0, '文本以格式头开头', text.split('\n')[0]);
+    check(b, text.indexOf('单选')>=0 && text.indexOf('简答')>=0, '文本里能看到题型名（人读得懂）');
+    check(b, text.indexOf('config: {')>=0 && text.indexOf('\\u')<0,
+      'config 里的中文**没有**被转义成 \\uXXXX（手改得了）',
+      (text.match(/config: .*/)||[''])[0].slice(0,80));
+
+    const back=TextFormatCore.importExam(text);
+    check(b, back.ok, '导入成功', back.ok?'':JSON.stringify(back.errors));
+    if(back.ok){
+      check(b, JSON.stringify(back.exam)===JSON.stringify(exam),
+        '**逐字段完全还原**（整对象比较，浏览器里同样成立）',
+        '题目数 '+back.exam.questions.length);
+      check(b, TextFormatCore.exportExam(back.exam)===text, '二次导出逐字节相同（幂等）');
+    }
+
+    const bad=text.replace('单选','填空题');
+    const rBad=TextFormatCore.importExam(bad);
+    check(b, rBad.ok===false, '未知题型 → 被拒绝');
+    check(b, Array.isArray(rBad.errors) && rBad.errors.length>0, '  给出错误清单',
+      (rBad.errors&&rBad.errors[0])?(rBad.errors[0].code+' @行'+rBad.errors[0].line):'');
+    check(b, rBad.errors.some(function(e){return typeof e.line==='number' && e.line>=1;}),
+      '  错误能定位到具体行');
+    const d=TextFormatCore.diagnose(text);
+    check(b, d.ok===true && d.questionCount===exam.questions.length, 'diagnose 与真实题目数一致', JSON.stringify(d));
+
+    /* 真实 localStorage：失败零写入 / 成功必变 */
+    const NS='selftestH_'+Date.now();
+    const store=DataCore.createStore({small:window.localStorage,large:null,namespace:NS,threshold:4096});
+    await ExamsCore.createExam(store,{title:'已有的卷'});
+    function snap(){const o={};for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf(NS+'::')===0)o[k]=localStorage.getItem(k);}return JSON.stringify(o);}
+    const base=snap();
+    const failed=await TextFormatCore.importToLibrary(store,bad,{});
+    check(b, failed.ok===false, '坏文本入库被拦下');
+    check(b, snap()===base, '**失败后 localStorage 逐字节未变**');
+    const okImp=await TextFormatCore.importToLibrary(store,text,{newIds:true});
+    check(b, okImp.ok, '好文本入库成功', okImp.ok?('examId='+okImp.exam.id):JSON.stringify(okImp.errors));
+    check(b, snap()!==base, '**对照：成功后 localStorage 确实变了**（否则上面那条是空转）');
+    const list=await ExamsCore.listExams(store);
+    check(b, list.total===2, '卷册里 2 份（原有的 + 导入的）', String(list.total));
+    check(b, (await ExamsCore.scanOrphans(store)).orphans.length===0, '无孤儿数据');
+    check(b, (await ExamsCore.scanOrphans(store)).missingBodies.length===0, '索引里也没有悬空条目');
+
+    const kill=[];
+    for(let i=0;i<localStorage.length;i++){const k=localStorage.key(i);if(k&&k.indexOf('selftestH_')===0)kill.push(k);}
+    kill.forEach(function(k){localStorage.removeItem(k);});
+    I(b,'已清理测试数据');
+  }catch(e){
+    F(b,'H 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== I. 跨"重启浏览器"的持久化（两阶段，必须刷新一次） ==================== */
+(async function(){
+  const b='secI';
+  const NS='persist_probe';        // 固定命名空间：刷新后还在才算持久
+  const DB='dsh_persist_probe';
+  try{
+    if (typeof DataCore==='undefined'){ F(b,'DataCore 没内联进本页'); finishSum(); return; }
+    if (typeof indexedDB==='undefined'){ F(b,'本页没有 indexedDB，验不了异步后端'); finishSum(); return; }
+
+    // 真正的 IndexedDB 后端：接口要合 DataCore.createStore 对 large 的要求
+    // （get/set/del/keys，全部返回 Promise；键是 data.js 传进来的全名 `ns::key`）
+    function idbBackend(){
+      let dbp=null;
+      function open(){
+        if(dbp) return dbp;
+        dbp=new Promise(function(res,rej){
+          const q=indexedDB.open(DB,1);
+          q.onupgradeneeded=function(){ const db=q.result; if(!db.objectStoreNames.contains('kv')) db.createObjectStore('kv'); };
+          q.onsuccess=function(){ res(q.result); };
+          q.onerror=function(){ rej(q.error); };
+          q.onblocked=function(){ rej(new Error('IndexedDB 被阻塞（是不是开了两个本页？关掉另一个）')); };
+        });
+        return dbp;
+      }
+      function tx(mode,fn){
+        return open().then(function(db){
+          return new Promise(function(res,rej){
+            const t=db.transaction('kv',mode), os=t.objectStore('kv');
+            let req; try{ req=fn(os); }catch(e){ rej(e); return; }
+            t.oncomplete=function(){ res(req?req.result:undefined); };
+            t.onerror=function(){ rej(t.error); };
+            t.onabort=function(){ rej(t.error||new Error('aborted')); };
+          });
+        });
+      }
+      return {
+        get:function(k){ return tx('readonly',function(os){ return os.get(k); }); },
+        set:function(k,v){ return tx('readwrite',function(os){ return os.put(v,k); }); },
+        del:function(k){ return tx('readwrite',function(os){ return os.delete(k); }); },
+        keys:function(){ return tx('readonly',function(os){ return os.getAllKeys(); }); }
+      };
+    }
+
+    const store=DataCore.createStore({ small:window.localStorage, large:idbBackend(), threshold:512, namespace:NS });
+    const prev=await store.get('marker');
+
+    if(!prev){
+      /* ---------- 阶段一：写入探针（**故意不清空**） ---------- */
+      I(b,'阶段一：写入持久化探针（namespace='+NS+'，threshold=512）');
+      const wSmall=await store.set('marker',{ at:new Date().toISOString(), note:'小记录，应进 localStorage' });
+      const wBig=await store.set('big',{ pad:'x'.repeat(2000), note:'大记录，应进 IndexedDB' });
+      const wSet=await store.set('settings',{ theme:'dark', points:{'单选':2} });
+      check(b, wSmall.where==='small', '小记录落**同步后端**（localStorage）', wSmall.where);
+      check(b, wBig.where==='large', '2000 字符的大记录落**异步后端**（IndexedDB）', wBig.where+' / '+wBig.bytes+' 字节');
+      check(b, wSet.where==='small', '全局设置落同步后端', wSet.where);
+      check(b, localStorage.getItem(NS+'::marker')!==null, '  localStorage 里确实有 marker');
+      check(b, localStorage.getItem(NS+'::big')===null, '  大记录**不在** localStorage 里（证明它真进了 IDB）');
+      W(b,'请**刷新本页**（F5 / Ctrl+R）再测一次','探针已写入且不会自动清理；刷新后本节会复核并清理');
+      finishSum(); return;
+    }
+
+    /* ---------- 阶段二：刷新之后的这一次加载 ---------- */
+    const since=Date.parse(prev.at);
+    I(b,'阶段二：这是**刷新后**的又一次加载，复核数据是否还在','上次写入于 '+prev.at);
+    check(b, Date.now()-since>0, '  确实重新加载过（上次写入早于现在）', Math.round((Date.now()-since)/1000)+' 秒前写入');
+
+    check(b, !!prev.note, '**localStorage 路径**：marker 原样读回', JSON.stringify(prev).slice(0,90));
+    const big=await store.get('big');
+    check(b, big!==null && big.pad.length===2000,
+      '**IndexedDB 路径**：2000 字符的大记录原样读回', big?big.pad.length+' 字符 / note='+big.note:'null');
+    const cfg=await store.get('settings');
+    check(b, !!(cfg&&cfg.theme==='dark'&&cfg.points&&cfg.points['单选']===2),
+      '全局设置（含中文键的嵌套对象）原样读回', JSON.stringify(cfg));
+
+    check(b, store.placement('marker')==='small', '  落点索引也持久：marker → small', String(store.placement('marker')));
+    check(b, store.placement('big')==='large', '  落点索引也持久：big → large', String(store.placement('big')));
+    const ks=(await store.keys()).slice().sort();
+    check(b, JSON.stringify(ks)===JSON.stringify(['big','marker','settings']),
+      'keys() 刷新后仍能跨两个后端汇总出 3 个键', JSON.stringify(ks));
+    const used=await store.usage();
+    check(b, used>2000, '  usage() 把两个后端都算进去了（含 IDB 里那 2000+ 字节）', used+' 字节');
+    if (typeof ReviewCore!=='undefined'){
+      const snap=ReviewCore.snapshot(await ReviewCore.storeSnapshot(store));
+      check(b, snap.length>2000, '  storeSnapshot 跨两个后端都能读（刷新后仍可快照）', snap.length+' 字符');
+    }
+
+    await store.del('marker'); await store.del('big'); await store.del('settings');
+    const left=await store.keys();
+    check(b, left.length===0, '  清理完成，探针不留痕', JSON.stringify(left));
+    P(b,'两条后端路径**都**通过了"关掉/刷新浏览器再打开"这一关');
+  }catch(e){
+    F(b,'I 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== J. 快捷面板（真浏览器：触屏尺寸 + 点击→配置） ==================== */
+(function(){
+  const b='secJ';
+  try{
+    const box=document.getElementById('secJ');
+    const host=document.createElement('div');
+    host.style.cssText='border:1px dashed #c7ccd3;border-radius:8px;padding:6px;margin:0 0 8px';
+    box.appendChild(host);
+    const cap=document.createElement('div');
+    cap.textContent='下面这块就是真面板（inline 模式，不吸底）：';
+    box.appendChild(cap);
+
+    /* ⚠ 面板的**初始规则**必须是"有题量/口径那几行"的那种（完全随机），
+     *   因为下面 ②③④ 要点的就是 count+/basis/score 这些动件。
+     *   内置默认已经是「全部作答」（不抽题）→ 那几行根本不渲染 → 老代码直接
+     *   `host.querySelector('[data-qp="count+"]').click()` 在 null 上炸掉（J 节整节跑挂，实测踩过）。
+     *   所以这里**显式**给一份完全随机的配置当起点。 */
+    const base=QuizCore.mergeConfig(QuizCore.DEFAULT_CONFIG,
+      { pick:{ mode:'random', randomBasis:'count', count:20 } });
+    let saved=null, lastError=null;
+    const panel=QuickPanel.mount({
+      container:host, config:base, inline:true,
+      onChange:function(next){ saved=next; },
+      onError:function(res){ lastError=res; }
+    });
+
+    check(b, !!panel.el && host.contains(panel.el), '面板挂载成功（QuickPanel.mount 在浏览器里能用）');
+
+    /* ---- ① 触屏点击目标：所有按钮/输入框高度都必须 ≥44px ---- */
+    /* ⚠ 量的是**可点区域的盒子**：复选框本身 22px（视觉尺寸），真正接点击的是它外面那个
+     *   44px 的 <label class="qp-tap">（见 quick-panel 的 renderRow）。量裸 input 会把
+     *   "已经满足规范"的实现误判成 FAIL。 */
+    const boxOf=function(n){ return (n.closest && n.closest('label')) || n; };
+    const clickables=[].slice.call(host.querySelectorAll('button,input'));
+    const small=clickables.filter(function(n){ return boxOf(n).getBoundingClientRect().height < 44; });
+    check(b, clickables.length>=10, '面板里可点元素有 '+clickables.length+' 个（够做尺寸抽查）');
+    check(b, small.length===0, '**所有可点元素高度 ≥44px**（触屏规范）',
+      small.map(function(n){ return (n.getAttribute('data-qp')||n.className)+'='+Math.round(boxOf(n).getBoundingClientRect().height)+'px'; }).join(', '));
+
+    /* ---- ② 点「题量 +」→ 配置真的变了，而且是 1 题一步 ---- */
+    const before=FlowCore.countControl(base).count;
+    const plus=host.querySelector('[data-qp="count+"]');
+    check(b, !!plus, '面板里有「题量 +」这个动件（当前规则是完全随机，才摆得出来）');
+    if(plus) plus.click();
+    check(b, saved && saved.pick && saved.pick.count===before+1,
+      '点「题量 +」→ pick.count 从 '+before+' 变成 '+before+1, saved && saved.pick && saved.pick.count);
+    check(b, saved.pick.mode==='random' && saved.pick.randomBasis==='count',
+      '  并且自动切到「完全随机 + 按题量」（快捷题量只在完全随机下真的决定抽多少题）',
+      saved.pick.mode+'/'+saved.pick.randomBasis);
+
+    /* 界面上的数字也要跟着变（不是只改了内存） */
+    saved=null;
+    panel.refresh(FlowCore.quickAction(panel.config(),{id:'count',value:30}).config);
+    const numBox=host.querySelector('[data-qp="count"]');
+    check(b, numBox && numBox.value==='30', '刷新到 30 题后输入框显示 30', numBox && numBox.value);
+
+    /* ---- ③ 按分数定义：切口径 → 题量行禁用、分数行可用 ---- */
+    const seg=host.querySelector('[data-qp="basis=score"]');
+    check(b, !!seg, '面板有「按目标总分」这个口径按钮');
+    seg.click();
+    check(b, saved && saved.pick.randomBasis==='score', '切到按分数后 randomBasis=score', saved && saved.pick.randomBasis);
+    check(b, host.querySelector('[data-qp="count"]').disabled===true, '  题量输入框被置灰（口径切走了）');
+    check(b, host.querySelector('[data-qp="score"]').disabled===false, '  目标总分输入框可用');
+    saved=null;
+    host.querySelector('[data-qp="score+"]').click();
+    check(b, saved && typeof saved.pick.targetScore==='number', '点「分数 +」→ targetScore 落地为数字', saved && saved.pick.targetScore);
+
+    /* ---- ④ 非法值被拦下 + 给出提示（分数线超范围） ---- */
+    saved=null; lastError=null;
+    panel.refresh(base);
+    check(b,true,'（先用**合法**配置点一次分数线「+」，确认它不是死控件）');
+    const passBefore=FlowCore.countControl(base)&&FlowCore.quickModel(base);
+    host.querySelector('[data-qp="grade.pass+"]').click();
+    check(b,saved&&saved.grade&&saved.grade.pass===65,
+      '点「及格线 +」→ 及格线 60 → 65（合法改动**成功**，不是"不认识的动件"）',saved&&saved.grade&&saved.grade.pass);
+    void passBefore;
+    /* 再用**真非法值**验证被拦：分数线超过 100（动件 id 是认识的，错误来自数值校验） */
+    saved=null; lastError=null;
+    panel.refresh(base);
+    host.querySelector('[data-qp="grade.pass"]').value='120';
+    host.querySelector('[data-qp="grade.pass"]').dispatchEvent(new Event('change',{bubbles:true}));
+    const errText=host.querySelector('.qp-err').textContent;
+    check(b,!!errText&&/没有采用/.test(errText),'**非法改动被拦下并在面板上给出提示**',errText.slice(0,90));
+    check(b,saved===null,'  而且没有把非法配置回抛给调用方（saved 仍为 null）');
+    check(b,!!lastError&&lastError.errors.length>0,'  onError 被调用并带上了错误明细',
+      lastError&&JSON.stringify(lastError.errors.map(function(e){return e.code;})));
+    check(b,!!lastError&&lastError.errors[0].code.indexOf('E_CFG_')===0,
+      '  错误码来自**数值校验**（E_CFG_*），不是"不认识这个动件"',lastError&&lastError.errors[0].code);
+
+    /* ---- ⑤ 时机与开关：点一下就是一次合法改动 ---- */
+    panel.refresh(base); saved=null;
+    host.querySelector('[data-qp="answerTiming=each"]').click();
+    check(b, saved && saved.reveal && saved.reveal.answerTiming==='each', '点「答案：答完一题即显示」→ 配置落地', saved && saved.reveal && saved.reveal.answerTiming);
+    /* ⚠ 开关是**双向**的：这里**不许写死**"点一下变 true" —— 默认值会变（现在默认就是开着的）。
+     *   改成"记下当前值 → 点一下必须变成相反值 → 再点一下回到原值"。
+     *   ⚠ 每点一下面板都会重绘（paint），旧节点变成死的 → 第二次必须先重新取节点。 */
+    saved=null;
+    var nBox=host.querySelector('[data-qp="autoNext"]');
+    const v0=nBox.checked;
+    nBox.click();
+    check(b, saved && saved.behavior && saved.behavior.autoNext===(!v0),
+      '点「自动翻页」开关 → 变成相反值（'+v0+' → '+(!v0)+'）', saved && saved.behavior && saved.behavior.autoNext);
+    saved=null;
+    host.querySelector('[data-qp="autoNext"]').click();
+    check(b, saved && saved.behavior && saved.behavior.autoNext===v0,
+      '再点一下 → 回到原来的值（开关是双向的）', saved && saved.behavior && saved.behavior.autoNext);
+
+    /* ---- ⑥ 面板的计数：点了多少次、生效多少次、被拦多少次，肉眼可核 ---- */
+    /* 本节的点击是**确定性的**：
+     *   ② 1 次 / ③ 2 次 / ④ **2 次（1 次合法生效 + 1 次被数值校验拦）** / ⑤ 3 次
+     *   = 共 8 次点击、7 次生效、1 次被拦
+     * ⚠ ④ 原来是 1 次（用"分数线颠倒"的配置去点），后来改成"先合法点一次、再喂 120 验被拦"，
+     *   计数必须跟着改成 8/7/1 —— 否则这一节会显示一条 FAIL（组级红队抓出的交付物缺陷）。 */
+    const st=panel.stats();
+    check(b, st.clicks===8 && st.changes===7 && st.errors===1,
+      '面板自报：点击 '+st.clicks+' 次 / 生效 '+st.changes+' 次 / 被拦 '+st.errors+' 次（与上面 8 次点击逐一对应）', JSON.stringify(st));
+
+    P(b,'快捷面板在真浏览器里可用：触屏尺寸达标、点击→配置改动可核、非法值被拦并提示');
+  }catch(e){
+    F(b,'J 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== K. 作答界面与触屏（真浏览器） ==================== */
+(async function(){
+  const b='secK';
+  try{
+    const parsed=await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+    const PARSER_Q=(parsed.questions||[]).map(function(q){return SchemaCore.createQuestion(q);});
+    const box=document.getElementById('secK');
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+    const cap=document.createElement('div');
+    cap.textContent='下面这块是 375px 宽的作答界面（真机手机宽度）：';
+    cap.style.cssText='font-size:12.5px;color:#8b93a3;margin:0 0 6px';
+    box.appendChild(cap);
+
+    /* 用内置样卷的题建会话；再补一道简答题确保四型都在 */
+    const qs=PARSER_Q.slice();
+    const shortQ=SchemaCore.createQuestion({id:'k_short',type:'简答',stem:'请分三行写出要点',keywords:[{text:'甲'},{text:'乙'},{text:'丙'}]});
+    qs.push(shortQ);
+    const cfgEach=QuizCore.mergeConfig(QuizCore.DEFAULT_CONFIG,{reveal:{answerTiming:'end',explainTiming:'end'},behavior:{autoCheck:true,autoNext:false}});
+    let session=AttemptCore.createSession({title:'自检·作答',questions:qs,config:cfgEach});
+    const view=AttemptView.mount({container:host,session:session});
+
+    /* ---- ① 四型控件都画出来了 ---- */
+    const types={}; qs.forEach(q=>types[q.type]=(types[q.type]||0)+1);
+    const seen={};
+    qs.forEach(function(q,i){
+      AttemptCore.goto(session,i); view.refresh();
+      const kind=AttemptCore.view(view.session()).question.kind;
+      seen[q.type]=kind;
+    });
+    check(b,Object.keys(types).length===4,'样卷覆盖四种题型：'+JSON.stringify(types));
+    check(b,seen['单选']==='single'&&seen['多选']==='multi'&&seen['判断']==='judge'&&seen['简答']==='text',
+      '四种题型各自画出对应控件（single/multi/judge/text）',JSON.stringify(seen));
+
+    /* ---- ② 简答题是多行文本框，且多行内容来回切题不丢 ---- */
+    const si=qs.length-1;
+    AttemptCore.goto(session,si); view.refresh();
+    const ta=host.querySelector('textarea[data-av="input"]');
+    check(b,!!ta,'简答题渲染出 <textarea>（多行输入）');
+    check(b,ta&&ta.tagName==='TEXTAREA'&&ta.rows>=4,'  它是真正的多行控件（rows='+(ta?ta.rows:'-')+'）');
+    if(ta){
+      ta.value='要点甲\n要点乙\n  缩进保留';
+      ta.dispatchEvent(new Event('input',{bubbles:true}));
+      const stored=view.session().answers.k_short;
+      AttemptCore.goto(session,0); view.refresh();
+      AttemptCore.goto(session,si); view.refresh();
+      const back=host.querySelector('textarea[data-av="input"]');
+      check(b,stored==='要点甲\n要点乙\n  缩进保留','多行输入被原样存下（含换行与缩进）',JSON.stringify(stored));
+      check(b,back&&back.value==='要点甲\n要点乙\n  缩进保留','切走再切回来，文本框里的多行内容一字不差',back&&back.value);
+    }
+
+    /* ---- ③ 底部快捷面板：改设置后**不跳页**就生效 ---- */
+    const urlBefore=location.href;
+    const eachBtn=host.querySelector('[data-qp="answerTiming=each"]');
+    check(b,!!eachBtn,'作答页里挂着底部快捷面板（能直接改展示时机）');
+    /* 按题型算出"正确的那几个选项"，用来**故意答对**（见下面 ③b 的说明） */
+    const wantedValues=function(){
+      const q=AttemptCore.current(session);
+      if(!q) return [];
+      if(q.type==='判断') return [q.judgeValue===true?'true':'false'];
+      return (q.answerLetters||[]).slice();
+    };
+    const clickOptions=function(which){
+      const want=wantedValues();
+      [].slice.call(host.querySelectorAll('[data-av="opt"]')).forEach(function(n){
+        const v=n.getAttribute('data-av-value');
+        const isRight=want.indexOf(v)>=0;
+        if((which==='right'&&isRight)||(which==='wrong'&&!isRight)) n.click();
+      });
+    };
+    if(eachBtn){
+      /* 先把一道选择作答并提交：此时时机是「整卷后」→ 不该看到答案。
+       * ⚠ 必须**答对**才能验"不揭示"：答错时规则④（答错当场给正确答案）会揭示它 ——
+       *   随便点第一个选项来验会误判成"时机设置没生效"（实测踩到）。 */
+      AttemptCore.goto(session,0); view.refresh();
+      clickOptions('right');
+      const submitBtn=host.querySelector('[data-av="submit"]');
+      if(submitBtn) submitBtn.click();
+      const revealedBefore=AttemptCore.view(view.session()).revealed;
+      check(b,revealedBefore===false,'改之前：**答对**提交后看不到答案（时机=整卷后）');
+      eachBtn.click();                                   // ← 面板改动，不跳页
+      const revealedAfter=AttemptCore.view(view.session()).revealed;
+      check(b,revealedAfter===true,'点面板「答完一题即显示」→ 当前页**立刻**能看到答案（不跳页）');
+      check(b,location.href===urlBefore,'  全程没有发生页面跳转（URL 未变）');
+      check(b,host.querySelector('.av-panel')!==null,'  答案区真的画出来了（不是只改了内存）');
+    }
+
+    /* ---- ③b 用户要求：**答错了要指出正确答案，而且不自动翻页** ---- */
+    {
+      /* ⚠ 必须挑一道**还没判过**的题：③ 刚把第 1 题答对并判了分，已判分的题选项是锁住的，
+       *   再点也不会改答案 —— 那样"故意选错"其实什么也没发生，断言会莫名其妙地红（实测踩到）。 */
+      let target=-1;
+      session.questions.forEach(function(q,i){ if(target<0&&!session.checked[q.id]) target=i; });
+      if(target<0) target=0;
+      AttemptCore.goto(session,target); view.refresh();
+      /* 打开自动翻页 + 等待 0（最容易看出"没翻"）、答案时机刻意设成「整卷后」 */
+      AttemptCore.setConfig(session, QuizCore.mergeConfig(AttemptCore.view(session).config,
+        {behavior:{autoCheck:true,autoNext:true,autoNextMs:0},reveal:{answerTiming:'end',explainTiming:'end'}}));
+      view.refresh();
+      const idxBefore=session.index;
+      clickOptions('wrong');                             // 故意选错
+      const badM=AttemptCore.view(session);
+      check(b,!!badM.score&&badM.score.correct===false,'故意选错 → 判为错（第 '+(target+1)+' 题）');
+      check(b,badM.revealed===true,'答错了 → 就算时机是「整卷后」也**当场给出正确答案**（用户要求）');
+      const badTxt=String((host.querySelector('.av-panel')||{}).textContent||'');
+      check(b,/正确答案/.test(badTxt),'  答案区真的写着「正确答案：…」（不是只把开关翻了）',badTxt.slice(0,60));
+      check(b,/看完正确答案自己点/.test(badTxt),'  并明说「看完正确答案自己点下一题」（文案在"删小字"那轮压缩过）');
+      check(b,session.index===idxBefore&&view.stats().pendingJump===false,
+        '  而且**不自动翻页**（等待 0 也没翻、连定时器都没排）');
+      AttemptCore.setConfig(session,cfgEach);            // 还原，免得影响后面的尺寸抽查与跳转
+      view.refresh();
+    }
+
+    /* ---- ④ 触屏：可点元素 ≥44px，且容器内不横向溢出 ---- */
+    const clickables=[].slice.call(host.querySelectorAll('button,input,textarea,select,[role="button"]'));
+    const tooSmall=clickables.filter(function(n){
+      const r=n.getBoundingClientRect();
+      return r.height<44 || r.width<24;                  // 高度硬标准 44；宽度太窄也不好点
+    });
+    check(b,clickables.length>=8,'作答界面里可点元素有 '+clickables.length+' 个（够做尺寸抽查）');
+    check(b,tooSmall.length===0,'**主要可点元素高度都 ≥44px**',
+      tooSmall.map(function(n){const r=n.getBoundingClientRect();return (n.getAttribute('data-av')||n.className||n.tagName)+'='+Math.round(r.width)+'x'+Math.round(r.height);}).join(', '));
+
+    const hostRect=host.getBoundingClientRect();
+    const overflow=[].slice.call(host.querySelectorAll('*')).filter(function(n){
+      const r=n.getBoundingClientRect();
+      return r.width>0 && (r.right>hostRect.right+1 || r.left<hostRect.left-1);
+    });
+    check(b,overflow.length===0,'375px 宽容器内**没有任何元素横向溢出**',
+      overflow.slice(0,4).map(function(n){return (n.className||n.tagName)+' right='+Math.round(n.getBoundingClientRect().right)+' > '+Math.round(hostRect.right);}).join(' | '));
+    check(b,host.scrollWidth<=host.clientWidth+1,'容器自身**没有横向滚动**（scrollWidth '+host.scrollWidth+' ≤ clientWidth '+host.clientWidth+'）');
+    check(b,document.documentElement.scrollWidth<=window.innerWidth+1,
+      '整页也没有横向滚动（当前窗口宽 '+window.innerWidth+'px）');
+
+    /* ---- ⑤ 题号索引：点哪跳哪 + 当前题高亮 + 未答提示 ---- */
+    const navCells=[].slice.call(host.querySelectorAll('[data-av="no"]'));
+    check(b,navCells.length===qs.length,'题号格子数 = 题目数（'+navCells.length+'）');
+    const cellH=navCells.map(n=>Math.round(n.getBoundingClientRect().height));
+    check(b,cellH.every(h=>h>=44),'每个题号格子高度 ≥44px（触屏可点）',cellH.join(','));
+
+    /* 点最后一格 → 跳到最后一题并高亮 */
+    navCells[navCells.length-1].click();
+    const curIdx=AttemptCore.view(view.session()).index;
+    const currentCells=[].slice.call(host.querySelectorAll('[data-av="no"]')).filter(n=>n.getAttribute('data-state')==='current');
+    check(b,curIdx===qs.length-1,'点最后一格 → 精确定位到第 '+qs.length+' 题',String(curIdx+1));
+    check(b,currentCells.length===1&&Number(currentCells[0].getAttribute('data-av-index'))===qs.length-1,
+      '  **当前题高亮且只有一格**（'+currentCells.length+' 格高亮）');
+
+    /* 点中间某格 → 再核对一次（不是"只认最后一格"） */
+    const mid=Math.floor(qs.length/2);
+    [].slice.call(host.querySelectorAll('[data-av="no"]'))[mid].click();
+    check(b,AttemptCore.view(view.session()).index===mid,'点中间第 '+(mid+1)+' 格 → 也准确定位',String(AttemptCore.view(view.session()).index+1));
+
+    /* 状态随作答实时更新：给当前题作答 → 那一格立刻变"已答" */
+    const cellBefore=[].slice.call(host.querySelectorAll('[data-av="no"]'))[mid].getAttribute('data-state');
+    const optNow=host.querySelector('[data-av="opt"]');
+    const taNow=host.querySelector('textarea[data-av="input"]');
+    if(optNow) optNow.click(); else if(taNow){taNow.value='甲';taNow.dispatchEvent(new Event('input',{bubbles:true}));}
+    const cellAfter=[].slice.call(host.querySelectorAll('[data-av="no"]'))[mid].getAttribute('data-state');
+    check(b,cellAfter!=='unanswered','作答后那一格**立刻**从"未答"变成"已答"（'+cellBefore+' → '+cellAfter+'）');
+
+    /* 未答交卷 → 出现提示，且能"返回继续"或"仍然交卷" */
+    const finishBtn=host.querySelector('[data-av="finish"]');
+    if(finishBtn){
+      finishBtn.click();
+      const gateShown=host.querySelector('.av-confirm');
+      const g=AttemptCore.gate(view.session());
+      if(g.ok){
+        check(b,true,'（这份样卷当前已全部作答，门禁放行 —— 直接交卷）');
+      }else{
+        check(b,!!gateShown,'存在未答题时交卷 → **给出提示**（不是悄悄交卷）');
+        check(b,!!host.querySelector('[data-av="back"]')&&!!host.querySelector('[data-av="force"]'),
+          '  提示里有两个选择：返回继续作答 / 仍然交卷');
+        const backBtn=host.querySelector('[data-av="back"]');
+        if(backBtn) backBtn.click();
+        check(b,host.querySelector('.av-confirm')===null,'点「返回继续作答」→ 提示关掉，回到答题界面');
+        check(b,AttemptCore.view(view.session()).finished===false,'  会话没有被标记交卷（还能继续答）');
+        /* 用户要求："未作答完点击交卷后的返回按钮应该自动跳转未作答的题目" */
+        const gFirst=g.unanswered[0];
+        check(b,AttemptCore.view(view.session()).index===gFirst.index,
+          '  而且**自动跳到第一道未作答的题**（第 '+gFirst.label+' 题，用户要求）',
+          'index='+AttemptCore.view(view.session()).index+' 期望='+gFirst.index);
+      }
+    }
+
+    /* ---- ⑥ 交卷后的成绩页 + 逐题回看 ---- */
+    const finishNow=host.querySelector('[data-av="finish"]');
+    if(finishNow){
+      finishNow.click();
+      const g2=AttemptCore.gate(view.session());
+      if(!g2.ok){                                   // 还有未答 → 先确认交卷
+        const force=host.querySelector('[data-av="force"]');
+        if(force) force.click();
+      }
+      const st=AttemptCore.view(view.session());
+      check(b,st.finished===true,'交卷后会话进入"已结束"状态');
+      const big=host.querySelector('.av-done .big');
+      check(b,!!big&&/\/$|^\d/.test(big.textContent),'成绩页画出"总分 / 满分"大字',big&&big.textContent);
+      const doneText=host.querySelector('.av-done')?host.querySelector('.av-done').textContent:'';
+      check(b,/等级：/.test(doneText)&&/答对 \d+ \/ \d+ 题/.test(doneText),'  成绩页含"等级"与"答对 x/y 题"',doneText.slice(0,80));
+      check(b,/及格线 \d+ \/ 优秀线 \d+/.test(doneText),'  并标出按哪两条分数线定的档');
+      const rev=host.querySelectorAll('.av-panel').length;
+      check(b,rev>=1,'交卷后画出**逐题回看卡片**（第 '+rev+' 张）');
+      const revText=host.querySelector('.av-panel')?host.querySelector('.av-panel').textContent:'';
+      check(b,/你的作答：/.test(revText)&&/正确答案：/.test(revText)&&/得分/.test(revText),
+        '  卡片里有：你的作答 / 正确答案 / 得分',revText.slice(0,90));
+      /* 回看时点题号能换到那一题 */
+      const nav2=[].slice.call(host.querySelectorAll('[data-av="no"]'));
+      if(nav2.length>1){
+        nav2[nav2.length-1].click();
+        const revText2=host.querySelector('.av-panel')?host.querySelector('.av-panel').textContent:'';
+        check(b,AttemptCore.view(view.session()).index===qs.length-1&&/第 '+qs.length+' 题/.test(revText2),
+          '  回看时点题号也能换到对应那一题',revText2.slice(0,60));
+      }
+    }
+
+      /* ---- ⑦ 简答人工订正：改判入口 + 总分/等级同步重算 ---- */
+      const shortIdx=qs.findIndex(function(q){return q.type==='简答';});
+      if(shortIdx>=0){
+        [].slice.call(host.querySelectorAll('[data-av="no"]'))[shortIdx].click();
+        const before=A.resultModel(view.session());
+        const kw=host.querySelector('[data-av="kw"]');
+        const scoreBox=host.querySelector('[data-av="manual-score"]');
+        const applyBtn=host.querySelector('[data-av="manual-apply"]');
+        check(b,!!scoreBox&&!!applyBtn,'简答题的回看卡片里有**人工订正入口**（分数输入 + 应用按钮）');
+        check(b,kw===null||kw.tagName==='BUTTON','  关键词以可点格子呈现（未命中的可标为命中）');
+        let after=before;
+        if(scoreBox&&applyBtn){
+          scoreBox.value=String(A.reviewList(view.session())[shortIdx].full);   // 直接给满分
+          applyBtn.click();
+          after=A.resultModel(view.session());
+          check(b,after.manualCount>=1,'  改判后被计入"人工订正 ' + after.manualCount + ' 题"');
+          check(b,after.score>=before.score,'  **整卷总分同步重算**（'+before.score+' → '+after.score+'）');
+          check(b,document.body.textContent.indexOf('人工订正')>=0,'  页面上能看到"人工订正"的痕迹');
+          const undo=host.querySelector('[data-av="manual-undo"]');
+          check(b,!!undo,'  并且有"撤销订正"按钮');
+          if(undo){ undo.click(); const undone=A.resultModel(view.session());
+            check(b,undone.score===before.score&&undone.manualCount===0,'  撤销后总分回到 '+before.score+'、订正记录清零'); }
+        }
+      }
+
+    view.destroy();
+    P(b,'作答界面在真浏览器里通过：四型控件齐全、多行不丢、面板改动即时生效且不跳页、题号点哪跳哪且高亮、未答交卷有提示、成绩页与逐题回看可读、简答人工订正可改可撤、点击区达标、无横向滚动');
+  }catch(e){
+    F(b,'K 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== L. 作答进度（两阶段·真刷新） ==================== */
+(async function(){
+  const b='secL';
+  const KEY_MARK='__quizProgressProbe__';
+  try{
+    const box=document.getElementById('secL');
+    const ls=window.localStorage;
+
+    /* 拿一份真题库：内置样卷 + 一道简答 */
+    const parsed=await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+    const qs=(parsed.questions||[]).map(function(q){return SchemaCore.createQuestion(q);});
+    qs.push(SchemaCore.createQuestion({id:'lp_short',type:'简答',stem:'进度探针用简答题',keywords:[{text:'甲'},{text:'乙'}]}));
+
+    const EXAM_ID='selfcheck-progress';
+    const store=DataCore.createStore({small:ls,large:null,namespace:'app'});
+    const ps=AttemptCore.createProgressStore(store,{examId:EXAM_ID});
+    const fullKey=DataCore.prefixedKey('app',AttemptCore.progressKey(EXAM_ID));
+
+    if(ls.getItem(KEY_MARK)!=='1'){
+      /* ---------- 阶段一：写入 ---------- */
+      const s=AttemptCore.createSession({examId:EXAM_ID,title:'进度探针卷',questions:qs,config:QuizCore.DEFAULT_CONFIG,startedAt:'2026-09-19T09:00:00.000Z'});
+      AttemptCore.goto(s,0); AttemptCore.answer(s,'A'); AttemptCore.submitCurrent(s);
+      AttemptCore.goto(s,qs.length-1);
+      AttemptCore.answer(s,'甲\n乙');
+      const w=await ps.save(s,{now:new Date().toISOString()});
+      ls.setItem(KEY_MARK,'1');
+      check(b,w.ok===true,'阶段一：把进度写进**真实 localStorage**（key='+fullKey+'）');
+      check(b,ls.getItem(fullKey)!==null,'  后端里确实有这个键（不是只改了内存）');
+      W(b,'请**刷新本页**（F5 / Ctrl+R）再测一次','探针已写入且不会自动清理；刷新后本节会复核恢复与清理');
+    }else{
+      /* ---------- 阶段二：刷新后复核 ---------- */
+      const lsBefore=ls.getItem(fullKey);
+      check(b,lsBefore!==null,'阶段二：刷新后进度键**还在**（跨刷新持久化成立）');
+      const got=await ps.load(qs);
+      check(b,got.ok===true,'  能读回来并体检通过',got.reason||'');
+      const s2=AttemptCore.createSession({examId:EXAM_ID,title:'进度探针卷',questions:qs,config:QuizCore.DEFAULT_CONFIG});
+      const r=AttemptCore.restoreProgress(s2,got.payload);
+      check(b,r.ok===true,'  恢复成功');
+      check(b,s2.answers[qs[0].id]==='A','  第 1 题的作答恢复了（A）',s2.answers[qs[0].id]);
+      check(b,s2.answers['lp_short']==='甲\n乙','  **简答题的多行作答也原样恢复**（含换行）',JSON.stringify(s2.answers['lp_short']));
+      check(b,s2.index===qs.length-1,'  **当前题号也恢复了**（第 '+qs.length+' 题）',String(s2.index+1));
+      check(b,s2.checked[qs[0].id]===true,'  已提交标记也恢复（回看/成绩页要用）');
+      /* 恢复后继续答 → 交卷，结果要正确 */
+      const rest=qs.filter(function(q,i){return i>0&&i<qs.length-1;});
+      for(let i=1;i<qs.length-1;i++){ AttemptCore.goto(s2,i); AttemptCore.answer(s2,'A'); }
+      const fin=AttemptCore.finish(s2,{confirmUnanswered:true});
+      check(b,fin.ok===true,'  恢复后能继续作答并交卷');
+      check(b,fin.summary.total===qs.length,'  结算覆盖整卷 '+qs.length+' 题（恢复没漏题）');
+      check(b,isFinite(fin.summary.percent)&&fin.summary.score>=0,'  分数正常（'+fin.summary.score+'/'+fin.summary.full+'）');
+      /* 交卷后清理 */
+      await ps.clear();
+      check(b,ls.getItem(fullKey)===null,'  **交卷后进度键被清掉**（不留脏数据）');
+      const again=await ps.load(qs);
+      check(b,again.ok===false&&again.reason==='empty','  再 load 为空 → 下一轮是全新一轮');
+      ls.removeItem(KEY_MARK);
+      P(b,'作答进度在真浏览器里通过：写入真实 localStorage → 刷新后作答与题号恢复 → 继续答并结算正确 → 交卷后清理干净');
+    }
+  }catch(e){
+    try{ window.localStorage.removeItem(KEY_MARK); }catch(_){}
+    F(b,'L 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== M. 错题本：分卷归集 / 逐题详情 / 跳回原卷（真浏览器） ==================== */
+(async function(){
+  const b='secM';
+  try{
+    const box=document.getElementById('secM');
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+    const cap=document.createElement('div');
+    cap.textContent='下面这块是 375px 宽的错题本（真机手机宽度）：';
+    cap.style.cssText='font-size:12.5px;color:#8b93a3;margin:0 0 6px';
+    box.appendChild(cap);
+
+    /* ---- ① 真答一遍 → 真交卷 → 真收集（不用手捏的假数据） ---- */
+    const parsed=await QuizParser.parseDocx(b64ToU8(SAMPLE_B64));
+    const A_ID='selfcheck-wrong-a', B_ID='selfcheck-wrong-b';
+    const examA=SchemaCore.createExam({id:A_ID,title:'自检·错题本甲卷',
+      questions:(parsed.questions||[]).map(function(q){return SchemaCore.createQuestion(q);})},
+      {now:'2026-09-20T08:00:00.000Z'});
+    const examB=SchemaCore.createExam({id:B_ID,title:'自检·错题本乙卷',questions:[
+      SchemaCore.createQuestion({id:'mb1',type:'单选',stem:'乙卷第一题',options:[{label:'A',text:'甲'},{label:'B',text:'乙'}],answerLetters:['A']}),
+      SchemaCore.createQuestion({id:'mb2',type:'判断',stem:'乙卷第二题',judgeValue:true})
+    ]},{now:'2026-09-20T09:00:00.000Z'});
+    check(b,examA.questions.length>=4,'内置样卷给了 '+examA.questions.length+' 道题（够做分组与详情抽查）');
+
+    /* 按题型各给一个"肯定不是答案"的作答 */
+    function wrongAnswerOf(q){
+      if(q.type==='单选'||q.type==='多选'){
+        const bad=(q.options||[]).filter(function(o){return (q.answerLetters||[]).indexOf(o.label)<0;})[0];
+        return bad?bad.label:'';
+      }
+      if(q.type==='判断') return q.judgeValue===true?'×':'√';
+      return '这段作答里一个要点都没有';
+    }
+    function rightAnswerOf(q){
+      if(q.type==='多选') return (q.answerLetters||[]).join('');
+      if(q.type==='单选') return (q.answerLetters||[])[0]||'';
+      if(q.type==='判断') return q.judgeValue===true?'√':'×';
+      return (q.keywords||[]).map(function(k){return k.text;}).join(' ');
+    }
+    function playExam(exam,wrong){
+      const s=AttemptCore.createSession({examId:exam.id,title:exam.title,questions:exam.questions,
+        config:QuizCore.DEFAULT_CONFIG,startedAt:'2026-09-20T10:00:00.000Z'});
+      exam.questions.forEach(function(q,i){
+        AttemptCore.goto(s,i);
+        AttemptCore.answer(s,wrong?wrongAnswerOf(q):rightAnswerOf(q));
+        AttemptCore.submitCurrent(s);
+      });
+      const fin=AttemptCore.finish(s,{confirmUnanswered:true,now:'2026-09-20T10:10:00.000Z'});
+      return {session:s,fin:fin};
+    }
+    const runA=playExam(examA,true), runB=playExam(examB,false);
+    check(b,runA.fin.ok===true&&runA.fin.summary.per.length===examA.questions.length,
+      '甲卷真交卷：'+examA.questions.length+' 题逐题结算',String(runA.fin.summary.score)+'/'+String(runA.fin.summary.full));
+    check(b,runB.fin.summary.per.every(function(p){return p.correct===true;}),
+      '乙卷每题都照标准答案作答且判为正确（用来验"全对不出分组"）');
+
+    function bookOf(exam,run){
+      const byId={}; exam.questions.forEach(function(q){byId[q.id]=q;});
+      const book=WrongCore.createBook(exam.id,'2026-09-20T10:10:00.000Z');
+      WrongCore.collect(book,run.fin.summary.per,{now:'2026-09-20T10:10:00.000Z',sessionAt:'s1',
+        questionsById:byId,answers:run.session.answers});
+      return book;
+    }
+    const bookA=bookOf(examA,runA), bookB=bookOf(examB,runB);
+    const expectedA=runA.fin.summary.per.filter(function(p){return p.correct===false;}).length;
+    check(b,expectedA>=3,'甲卷真答错 '+expectedA+' 题（够做抽查）');
+    check(b,WrongCore.stats(bookA).total===expectedA,
+      '收进错题本的条数 = 判分为 false 的题数（'+expectedA+'）—— 入本门限与判分同一口径',
+      'book='+WrongCore.stats(bookA).total+'  per=false='+expectedA);
+    check(b,WrongCore.stats(bookB).total===0,'乙卷全对 → 一条都没进本（不因为"答对"凭空建条目）');
+
+    /* ---- ② 分组视图：按卷分组、计数与判分一致 ---- */
+    const jumped=[];
+    const view=WrongView.mount({container:host,books:[{book:bookA,exam:examA},{book:bookB,exam:examB}],
+      onJump:function(examId,index,t){jumped.push({examId:examId,index:index,title:t&&t.title});}});
+    let gs=view.groups();
+    check(b,gs.length===1,'只列出"有错题"的 '+gs.length+' 套卷（乙卷全对 → 不出分组）',
+      gs.map(function(g){return g.title+'('+g.total+')';}).join(','));
+    check(b,gs[0].examId===A_ID&&gs[0].title===examA.title,'分组标题取**试卷标题**（不是 id）：'+gs[0].title);
+    check(b,gs[0].total===expectedA,'分组计数 = 误答数（'+gs[0].total+'）');
+    check(b,gs[0].timesSum===expectedA,'累计误答次数 = 题数（首轮每题各错 1 次）',String(gs[0].timesSum));
+    const items=[].slice.call(host.querySelectorAll('[data-wv="item"]'));
+    check(b,items.length===gs[0].total,'界面上真的画出 '+items.length+' 条（不是只算了个数）');
+
+    /* ---- ③ 点一条 → 详情从**试卷**现读：原题 / 参考答案 / 解析 ---- */
+    /* 取"列表第一条"对应的题（而不是假定它就是第 1 题）：样卷里若有题恰好被判对，它压根不在本子里 */
+    const selQid=gs[0].entries[0].qid;
+    const selQ=examA.questions.filter(function(q){return q.id===selQid;})[0];
+    const selQIdx=examA.questions.map(function(q){return q.id;}).indexOf(selQid);
+    check(b,!!selQ&&selQIdx>=0,'列表第一条对应卷内第 '+(selQIdx+1)+' 题（'+selQid+'）');
+    items[0].click();
+    const card=host.querySelector('.wv-tile');
+    check(b,!!card,'点一条 → 磁贴出现在这条下面（内联展开）');
+    const cardText=card?card.textContent:'';
+    check(b,cardText.indexOf(selQ.stem)>=0,'详情里的**原题**就是试卷里的题干（现读，不是快照）');
+    check(b,cardText.indexOf(QuizCore.answerText(selQ))>=0,'  带**参考答案**：'+QuizCore.answerText(selQ));
+    check(b,cardText.indexOf('解析')>=0,'  带**解析**那一栏（没解析也会写明）');
+    check(b,/答错 \d+ 次/.test(cardText),'  带**答错次数**');
+    check(b,cardText.indexOf('你的作答')>=0&&cardText.indexOf('得分')>=0,'  带"你的作答 / 得分"（能看清当时错在哪）');
+    const jump0=host.querySelector('[data-wv="jump"]');
+    check(b,!!jump0&&jump0.disabled!==true,'这道题还在卷里 → 「跳到这道题」**可用**');
+    if(jump0){
+      jump0.click();
+      check(b,jumped.length===1&&jumped[0].examId===A_ID&&jumped[0].index===selQIdx,
+        '点「跳到这道题」→ 回调带回正确的卷与**卷内下标**（第 '+(selQIdx+1)+' 题）',
+        JSON.stringify(jumped[0]));
+      check(b,view.stats().jumps===1,'  视图自己记到 1 次跳转');
+    }
+
+    /* ---- ④ 硬规矩：题干改过 → 显示卷里最新版并标出来（不拿快照冒充原题） ---- */
+    /* 被删的那道题也从**本子里真有的条目**里挑，别假定"第 1 题/最后一题一定错过" */
+    const others=gs[0].entries.map(function(e){return e.qid;}).filter(function(id){return id!==selQid;});
+    const delQid=others[others.length-1];
+    const examMut=JSON.parse(JSON.stringify(examA));
+    examMut.questions[selQIdx].stem='【自检】这是改过的题干';
+    const snapshotStem=bookA.entries[selQid].stem;
+    const delSnapshot=bookA.entries[delQid].stem;
+    examMut.questions=examMut.questions.filter(function(q){return q.id!==delQid;});
+
+    view.refresh([{book:bookA,exam:examMut}]);
+    view.select(A_ID,selQid);
+    const card2=host.querySelector('.wv-tile');
+    const t2=card2?card2.textContent:'';
+    const stemEl2=host.querySelector('.wv-tile [data-wv="stem"]');
+    check(b,t2.indexOf('题干已经改过了')>=0,'题干改过 → 详情**显式标出**「试卷里的题干已经改过了」');
+    check(b,!!stemEl2&&stemEl2.textContent==='【自检】这是改过的题干',
+      '  画出来的"原题"**逐字等于**卷子里的最新题干',stemEl2?stemEl2.textContent:'（没找到原题那一行）');
+    check(b,!!stemEl2&&stemEl2.textContent!==snapshotStem,'  画出来的不是旧快照（'+snapshotStem.slice(0,12)+'…）');
+    const listStem=host.querySelector('[data-wv="item"] .wv-stem');
+    check(b,!!listStem&&listStem.textContent.indexOf(snapshotStem)>=0,
+      '  列表里仍显示当时那道题的题干（快照留档，和详情形成对照）');
+
+    /* ---- ⑤ 题被删掉 → 如实说明 + **禁用跳转**（点了也不回调） ---- */
+    const jumpedBefore=jumped.length;
+    view.select(A_ID,delQid);
+    const card3=host.querySelector('.wv-tile');
+    const t3=card3?card3.textContent:'';
+    const stemEl3=host.querySelector('.wv-tile [data-wv="stem"]');
+    const jump3=host.querySelector('[data-wv="jump"]');
+    check(b,t3.indexOf('不在试卷里')>=0,'题已从卷里删掉 → 详情如实说明（'+t3.slice(0,24)+'…）');
+    check(b,!!stemEl3&&stemEl3.textContent.indexOf('（原题已不在试卷里）快照：'+delSnapshot)===0,
+      '  原题那一行换成**快照存档**（写明原题已不在试卷里）',stemEl3?stemEl3.textContent.slice(0,20):'（没找到）');
+    check(b,!!jump3&&jump3.disabled===true,'  「跳到这道题」**禁用**（跳不过去就不装样子）',
+      jump3?('disabled='+jump3.disabled):'按钮都没画出来');
+    if(jump3) jump3.click();
+    check(b,jumped.length===jumpedBefore,'  点这个禁用按钮**不会**触发跳转回调');
+
+    /* ---- ⑥ 触屏：可点条目 ≥44px、375px 内不横向溢出 ---- */
+    const clickables=[].slice.call(host.querySelectorAll('button,[data-wv="item"]'));
+    const tooSmall=clickables.filter(function(n){
+      const r=n.getBoundingClientRect();
+      return r.height<44||r.width<24;
+    });
+    check(b,clickables.length>=3,'错题本里可点元素有 '+clickables.length+' 个（够做尺寸抽查）');
+    check(b,tooSmall.length===0,'**条目与按钮高度都 ≥44px**',
+      tooSmall.map(function(n){const r=n.getBoundingClientRect();return (n.getAttribute('data-wv')||n.tagName)+'='+Math.round(r.width)+'x'+Math.round(r.height);}).join(', '));
+    const hostRect=host.getBoundingClientRect();
+    const overflow=[].slice.call(host.querySelectorAll('*')).filter(function(n){
+      const r=n.getBoundingClientRect();
+      return r.width>0&&(r.right>hostRect.right+1||r.left<hostRect.left-1);
+    });
+    check(b,overflow.length===0,'375px 宽容器内**没有任何元素横向溢出**',
+      overflow.slice(0,4).map(function(n){return (n.className||n.tagName)+' right='+Math.round(n.getBoundingClientRect().right);}).join(' | '));
+    check(b,host.scrollWidth<=host.clientWidth+1,'容器自身没有横向滚动（scrollWidth '+host.scrollWidth+' ≤ clientWidth '+host.clientWidth+'）');
+
+    /* ---- ⑦ 空错题本 → 明确的空态（不是一片空白） ---- */
+    view.refresh([]);
+    check(b,view.groups().length===0,'没有任何错题 → 分组数为 0');
+    check(b,host.textContent.indexOf('还没有错题')>=0,'  界面给出明确的空态提示');
+    view.destroy();
+    check(b,host.querySelector('[data-wv-root]')===null,'destroy() 之后视图从容器里摘干净');
+
+    P(b,'错题本在真浏览器里通过：真交卷收集 → 按卷分组且计数与判分同口径 → 详情现读原题/答案/解析 → 「跳到这道题」精确回原卷；题干改过显示最新版、题被删则禁用跳转');
+  }catch(e){
+    F(b,'M 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== N. 删卷级联询问（真浏览器 + 真存储） ==================== */
+(async function(){
+  const b='secN';
+  const ID_KEEP='selfcheck-del-keep', ID_CASC='selfcheck-del-cascade';
+  try{
+    const box=document.getElementById('secN');
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f;min-height:60px';
+    box.appendChild(host);
+    const store=DataCore.createStore({small:window.localStorage,large:null,namespace:DataCore.NS_GLOBAL});
+
+    async function seed(id,title){
+      const made=await ExamsCore.createExam(store,{id:id,title:title});
+      if(!made.ok&&!/已存在/.test(made.error||''))throw new Error('造卷失败：'+made.error);
+      const qs=[
+        SchemaCore.createQuestion({id:id+'-q1',type:'单选',stem:title+'·题一',options:[{label:'A',text:'甲'},{label:'B',text:'乙'}],answerLetters:['A'],explanation:'解析一'}),
+        SchemaCore.createQuestion({id:id+'-q2',type:'判断',stem:title+'·题二',judgeValue:true,explanation:'解析二'})
+      ];
+      await ExamsCore.setQuestions(store,id,qs,{now:new Date().toISOString()});
+      const s=AttemptCore.createSession({examId:id,title:title,questions:qs,config:QuizCore.DEFAULT_CONFIG});
+      qs.forEach(function(q,i){AttemptCore.goto(s,i);AttemptCore.answer(s,q.type==='判断'?'×':'B');AttemptCore.submitCurrent(s);});
+      const fin=AttemptCore.finish(s,{confirmUnanswered:true,now:new Date().toISOString()});
+      const byId={}; qs.forEach(function(q){byId[q.id]=q;});
+      const book=WrongCore.createBook(id,new Date().toISOString());
+      WrongCore.collect(book,fin.summary.per,{now:new Date().toISOString(),sessionAt:'N-'+id,questionsById:byId,answers:s.answers});
+      await store.set(DataCore.wrongKey(id),WrongCore.toJSON(book));
+      await store.set(DataCore.recordKey(id),[{at:new Date().toISOString(),examId:id,score:0,full:6,percent:0,level:'不及格'}]);
+      return {qs:qs,book:book};
+    }
+    function residue(id){
+      return store.keys().then(function(keys){
+        const full=function(k){return DataCore.prefixedKey(DataCore.NS_GLOBAL,k);};
+        const hit={body:[],sub:[],record:[],wrong:[]};
+        keys.forEach(function(k){
+          if(k===full(DataCore.examBodyKey(id)))hit.body.push(k);
+          else if(k.indexOf(full(DataCore.examSubPrefix(id)))===0)hit.sub.push(k);
+          else if(k===full(DataCore.recordKey(id)))hit.record.push(k);
+          else if(k===full(DataCore.wrongKey(id)))hit.wrong.push(k);
+        });
+        return hit;
+      });
+    }
+    async function mountDialog(prompt){
+      let picked=null;
+      const d=DeleteDialog.mount({container:host,prompt:prompt,onChoose:function(p){picked=p;}});
+      return {d:d,get:function(){return picked;}};
+    }
+
+    /* ---------- ① 弹窗本身：遮罩铺满、两个选项、取消、不点不写 ---------- */
+    const seeded=await seed(ID_KEEP,'自检·待保留卷');
+    const pv=await ExamsCore.deletePreview(store,ID_KEEP);
+    check(b,pv.ok===true&&pv.plan.wrongCount===Object.keys(seeded.book.entries).length,
+      '询问模型读出的错题条数与真本子一致（'+pv.plan.wrongCount+' 条）');
+    check(b,/1 条作答记录/.test(pv.plan.message),'  询问文案里带上作答记录条数',pv.plan.message);
+
+    const keysBefore=(await store.keys()).slice().sort().join('|');
+    let cur=await mountDialog(pv.plan);
+    const maskRect=cur.d.el.getBoundingClientRect();
+    check(b,Math.round(maskRect.width)>=window.innerWidth-1&&Math.round(maskRect.height)>=window.innerHeight-1,
+      '弹窗遮罩铺满视口（'+Math.round(maskRect.width)+'x'+Math.round(maskRect.height)+'）—— 点不到底下的东西');
+    const optBtns=[].slice.call(cur.d.el.querySelectorAll('[data-dd="opt"]'));
+    check(b,optBtns.length===2,'弹窗里两个选项按钮');
+    check(b,optBtns.map(function(n){return n.getAttribute('data-dd-policy');}).join(',')==='cascade,keepRecords',
+      '  政策名固定（cascade / keepRecords）');
+    const tooSmall=optBtns.concat([].slice.call(cur.d.el.querySelectorAll('[data-dd="cancel"]'))).filter(function(n){
+      return n.getBoundingClientRect().height<44;
+    });
+    check(b,tooSmall.length===0,'**两个选项与取消按钮高度都 ≥44px**',
+      tooSmall.map(function(n){return n.getAttribute('data-dd')+'='+Math.round(n.getBoundingClientRect().height);}).join(', '));
+    check(b,cur.d.el.textContent.indexOf('无法恢复')>=0,'破坏性后果写在弹窗里（不是只问一句"确定吗"）');
+    cur.d.el.click();                                   // 点遮罩空白处
+    check(b,cur.get()===null,'点遮罩空白处 = **取消**：onChoose 一次都没触发');
+    check(b,(await store.keys()).slice().sort().join('|')===keysBefore,'  取消后存储**逐键未变**（什么都没写）');
+    cur.d.destroy();
+
+    /* ---------- ② 选『否』：卷删了、记录留下且有归属标识 ---------- */
+    const pv2=await ExamsCore.deletePreview(store,ID_KEEP);
+    cur=await mountDialog(pv2.plan);
+    const keepBtn=[].slice.call(cur.d.el.querySelectorAll('[data-dd="opt"]')).filter(function(n){
+      return n.getAttribute('data-dd-policy')==='keepRecords';
+    })[0];
+    keepBtn.click();
+    check(b,cur.get()==='keepRecords','点第 2 个选项 → 回调带回 keepRecords（"否"）');
+    cur.d.destroy();
+    const doneKeep=await ExamsCore.deleteExam(store,ID_KEEP,{policy:cur.get(),now:new Date().toISOString()});
+    check(b,doneKeep.ok===true&&doneKeep.orphansKept.length===2,'按选择执行：保留了 2 类记录');
+    const rKeep=await residue(ID_KEEP);
+    check(b,rKeep.body.length===0&&rKeep.sub.length===0,'  卷本体与子键都删掉了');
+    check(b,rKeep.wrong.length===1&&rKeep.record.length===1,'  错题本与作答记录两把键都还在');
+    check(b,(await ExamsCore.getExam(store,ID_KEEP)).ok===false,'  查看试卷：明确失败（不是"还在但读不出"）');
+    const own=await ExamsCore.ownerOf(store,ID_KEEP);
+    check(b,own.kind==='deleted'&&own.label==='已删除试卷（原《自检·待保留卷》）',
+      '**归属标识可查询**：'+own.label);
+    const scanKeep=await ExamsCore.scanOrphans(store);
+    check(b,scanKeep.orphans.length===0,'**键扫描：零孤儿**（残留记录都在墓碑覆盖下）',
+      JSON.stringify(scanKeep.orphans));
+    check(b,scanKeep.identified.length===2,'  并被列为"有主"的 2 条',JSON.stringify(scanKeep.identified.map(function(o){return o.kind;})));
+    const backBook=await WrongCore.loadBook(store,ID_KEEP);
+    check(b,backBook.ok===true&&!backBook.empty,'  错题本仍能从真实 localStorage 读回');
+
+    /* 界面：已删除的卷要标出来、不给删除按钮、跳转禁用 */
+    const wv=WrongView.mount({container:host,books:[{book:backBook.book,exam:null,owner:own}],onJump:function(){}});
+    check(b,host.querySelectorAll('[data-wv="dead-tag"]').length===1,'错题本里标出「已删除试卷」');
+    check(b,host.querySelector('.wv-ghead').textContent.indexOf(own.label)>=0,'  分组标题就是归属标识',
+      host.querySelector('.wv-ghead').textContent);
+    check(b,host.querySelectorAll('[data-wv="delete"]').length===0,'  不再给"删除这套卷"按钮');
+    host.querySelector('[data-wv="item"]').click();
+    const jb=host.querySelector('[data-wv="jump"]');
+    check(b,!!jb&&jb.disabled===true,'  「跳到这道题」禁用（卷没了，跳不过去）');
+    wv.destroy();
+
+    /* ---------- ③ 选『是』：一并删除、零残留、不可恢复 ---------- */
+    await seed(ID_CASC,'自检·待级联卷');
+    const pv3=await ExamsCore.deletePreview(store,ID_CASC);
+    cur=await mountDialog(pv3.plan);
+    const cand=[].slice.call(cur.d.el.querySelectorAll('[data-dd="opt"]')).filter(function(n){
+      return n.getAttribute('data-dd-policy')==='cascade';
+    })[0];
+    cand.click();
+    check(b,cur.get()==='cascade','点第 1 个选项 → 回调带回 cascade（"是"）');
+    cur.d.destroy();
+    const doneCasc=await ExamsCore.deleteExam(store,ID_CASC,{policy:cur.get(),now:new Date().toISOString()});
+    check(b,doneCasc.ok===true,'按选择执行级联删除');
+    const rCasc=await residue(ID_CASC);
+    check(b,rCasc.body.length===0&&rCasc.sub.length===0&&rCasc.wrong.length===0&&rCasc.record.length===0,
+      '**三类键全部归零**（本体/meta/错题本/作答记录）',JSON.stringify(rCasc));
+    const scanCasc=await ExamsCore.scanOrphans(store);
+    check(b,scanCasc.orphans.length===0&&scanCasc.identified.length===0,'  巡检：零孤儿、零残留标识');
+    check(b,(await ExamsCore.ownerOf(store,ID_CASC)).kind==='unknown','  归属查询：查无此卷（不留"已删除"标识）');
+    /* 换一个新 store 实例（= 关掉页面再打开）读一遍 */
+    const store2=DataCore.createStore({small:window.localStorage,large:null,namespace:DataCore.NS_GLOBAL});
+    check(b,(await ExamsCore.getExam(store2,ID_CASC)).ok===false,'  **新实例仍然查不到**（不是内存里删了、盘上还在）');
+    check(b,(await WrongCore.loadBook(store2,ID_CASC)).empty===true,'  错题本也读不回来（不可恢复）');
+
+    /* ---------- ④ 收尾：把临时卷的残留彻底清掉，别留在你机器上 ---------- */
+    const clean1=await ExamsCore.deleteExam(store,ID_KEEP,{policy:'cascade',now:new Date().toISOString()});
+    check(b,clean1.ok===true,'收尾：把"保留记录"那套卷的残留也级联清掉');
+    const rEnd=await residue(ID_KEEP);
+    check(b,rEnd.body.length===0&&rEnd.sub.length===0&&rEnd.wrong.length===0&&rEnd.record.length===0,
+      '  收尾后该卷零残留（含旧墓碑）',JSON.stringify(rEnd));
+    const scanEnd=await ExamsCore.scanOrphans(store);
+    check(b,scanEnd.orphans.length===0&&scanEnd.identified.length===0,'  最终巡检：零孤儿、零残留');
+    check(b,(await ExamsCore.ownerOf(store,ID_KEEP)).kind==='unknown','  旧墓碑也被抹掉（不留下一个空壳标识）');
+
+    P(b,'删卷级联询问在真浏览器里通过：真弹窗（遮罩铺满/两个 ≥44px 选项/取消不写盘）→ 选『否』记录留下且带「已删除试卷」归属标识、键扫描零孤儿 → 选『是』三类键全部归零且新实例仍查无；临时数据已清理');
+  }catch(e){
+    try{
+      const s=DataCore.createStore({small:window.localStorage,large:null,namespace:DataCore.NS_GLOBAL});
+      await ExamsCore.deleteExam(s,ID_KEEP,{policy:'cascade'});
+      await ExamsCore.deleteExam(s,ID_CASC,{policy:'cascade'});
+    }catch(_){}
+    F(b,'N 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== O. AI 密钥与能力表（两阶段·真刷新） ==================== */
+(async function(){
+  const b='secO';
+  const MARK='__quizAiKeyProbe__';
+  /* 探针 Key **在运行时拼出来**，不写成字面量：
+   *   `verify/ai-keys.test.js` 有一条"成品里不许出现 sk- 开头的长串"的扫描（防有人把真 Key 粘进模板），
+   *   我们自己的自检页当然也得守这条规矩 —— 写成字面量就会把那道闸门弄脏。 */
+  const PROBE_KEY='sk-'+'probe-'+'4b7d2a91c8e35f60zz';   // 假 Key，不是任何真服务的凭证
+  try{
+    const box=document.getElementById('secO');
+    const ls=window.localStorage;
+    const keyStore=AiCore.openKeyStore(ls);
+    check(b,!!keyStore&&keyStore.namespace==='secret','密钥 store 开在独立命名空间 secret（与 app 分开）');
+
+    /* 能力表（两阶段都要看：它是纯数据，不受刷新影响） */
+    const rows=AiCore.providerRows();
+    eq0(b,rows.length,6,'能力表列出 6 家供应商');
+    eq0(b,AiCore.capabilityGaps().length,0,'**没有一家漏写能力位**（jsonMode / browserDirect 都显式声明）');
+    const blocked=rows.filter(function(r){return !r.browserDirect;});
+    check(b,blocked.length>=1,'有 '+blocked.length+' 家被标为不可直连：'+blocked.map(function(r){return r.label;}).join('、'));
+    check(b,blocked.every(function(r){return r.directNote&&r.directNote.length>8;}),
+      '不可直连的家都带一句"为什么"（不是只给个红标）',blocked.map(function(r){return r.directNote;}).join(' | '));
+    check(b,rows.every(function(r){return typeof r.jsonMode==='boolean';}),'每家的 JSON 模式能力都是明确的布尔值');
+
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+    let panel=AiSettings.mount({container:host,store:keyStore,onChange:function(){}});
+
+    if(ls.getItem(MARK)!=='1'){
+      /* ---------- 阶段一：通过界面真的填一把 Key ---------- */
+      const m0=await panel.refresh();
+      eq0(b,m0.configuredCount,0,'阶段一：一开始没填任何 Key');
+      const inputs=[].slice.call(host.querySelectorAll('[data-as="input"]'));
+      const oaInput=inputs.filter(function(n){return n.getAttribute('data-as-provider')==='openai';})[0];
+      check(b,!!oaInput&&oaInput.disabled===true,'不可直连的家：输入框直接禁用（填了也用不了）');
+      check(b,host.querySelectorAll('[data-as="blocked-note"]').length>=1,'  并且画出了红标 + 原因说明');
+      /* 文案在"删小字"那轮改过：现在是「密钥只存本机，不上传、不随分享文件导出；本页只显示遮罩。」 */
+  check(b,host.textContent.indexOf('只存本机')>=0&&host.textContent.indexOf('不随分享文件导出')>=0,
+    '界面上明写"只存本机、不随分享文件导出"');
+      const dsInput=inputs.filter(function(n){return n.getAttribute('data-as-provider')==='dashscope';})[0];
+      check(b,!!dsInput&&dsInput.type==='password','可直连的家：输入框是 type=password（不裸显）');
+      dsInput.value=PROBE_KEY;
+      host.querySelector('[data-as="save"][data-as-provider="dashscope"]').click();
+      await sleep0(30);
+      eq0(b,panel.stats().saves,1,'点「保存」→ 保存动作发生 1 次');
+      check(b,ls.getItem(DataCore.prefixedKey('secret',AiCore.keysKey()))!==null,
+        '**真写进了 localStorage**（键：'+DataCore.prefixedKey('secret',AiCore.keysKey())+'）');
+      check(b,host.textContent.indexOf(PROBE_KEY)<0,'DOM 里找不到 Key 原文（只显示遮罩）');
+      check(b,host.textContent.indexOf('sk-p…60zz')>=0,'  显示的是遮罩形态：sk-p…60zz');
+      ls.setItem(MARK,'1');
+      W(b,'请**刷新本页**（F5 / Ctrl+R）再测一次','探针 Key 已写入且不会自动清理；刷新后本节会复核并清理');
+    }else{
+      /* ---------- 阶段二：刷新后复核 ---------- */
+      check(b,ls.getItem(DataCore.prefixedKey('secret',AiCore.keysKey()))!==null,
+        '阶段二：刷新后密钥键**还在**（跨刷新持久化成立）');
+      const m1=await panel.refresh();
+      eq0(b,m1.configuredCount,1,'  面板读回 1 家已配置');
+      const rowDs=m1.rows.filter(function(r){return r.key==='dashscope';})[0];
+      eq0(b,[rowDs.configured,rowDs.masked,rowDs.callable],[true,'sk-p…60zz',true],
+        '  遮罩形态一致、且判定为"现在就能调用"');
+      const rk=await AiCore.readKey(keyStore,'dashscope');
+      /* ⚠ 断言里**不许**把 Key 原文交给报告器：eq0 在 PASS 时会把期望值打进结果，
+       *   而本节的输出是给用户「复制全部结果」发出去的 —— 那等于自己把探针 Key 递出去。
+       *   所以这里一律只比较布尔/遮罩。 */
+      eq0(b,[rk.configured,rk.apiKey===PROBE_KEY],[true,true],'**readKey 能读回原文（可直接用于调用）**');
+      /* 拿读回来的原文真发一次请求：fetch 换成假的，只看请求头 */
+      const got=[];
+      const fake=async function(url,init){got.push({url:url,authOk:init.headers.Authorization==='Bearer '+PROBE_KEY});return{ok:true,status:200,text:async function(){return JSON.stringify({choices:[{message:{content:'{"level":2,"reason":"简单"}'}}]});}};};
+      const call=await AiCore.callSaved(keyStore,fake,'dashscope',{task:'difficulty',user:'刷新后能不能用'});
+      eq0(b,[call.ok,call.usingSavedKey],[true,true],'**刷新之后照样能直接发起调用**');
+      eq0(b,got.length,1,'  真发了 1 次请求（没被"没填 Key"拦住）');
+      eq0(b,got[0].authOk,true,'**请求头里就是刷新前填的那把 Key**（只比布尔，不把原文打进报告）');
+      const callOA=await AiCore.callSaved(keyStore,fake,'openai',{task:'difficulty',user:'x'});
+      eq0(b,[callOA.ok,callOA.kind],[false,'no_direct'],'不可直连的家：即使有 Key 也拦住，不发请求');
+      eq0(b,got.length,1,'  一个请求都没多发');
+      /* 清理：清除探针 Key + 标记 */
+      const cl=await AiCore.clearKey(keyStore,'dashscope');
+      eq0(b,[cl.ok,cl.cleared],[true,true],'收尾：清掉探针 Key');
+      eq0(b,(await AiCore.hasKey(keyStore,'dashscope')).configured,false,'  新读一遍：已未配置（清理干净）');
+      ls.removeItem(MARK);
+      P(b,'AI 密钥在真浏览器里通过：界面填入 → 刷新后仍在（遮罩一致、readKey 读得回原文）→ 刷新后仍能直接用保存的 Key 发起调用；不可直连的家被明确标注且拦住不发请求；探针已清理');
+    }
+    panel.destroy();
+  }catch(e){
+    try{ window.localStorage.removeItem(MARK); }catch(_){}
+    F(b,'O 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== P. 单题智能生成（假 fetch 可重复验） ==================== */
+(async function(){
+  const b='secP';
+  const PROBE_KEY='sk-'+'probe-'+'single-71c4e9a08b5362df';   // 运行时拼串，别把 sk- 长串写进成品
+  try{
+    const box=document.getElementById('secP');
+    const ls=window.localStorage;
+    const keyStore=AiCore.openKeyStore(ls);
+    await AiCore.saveKey(keyStore,'dashscope',PROBE_KEY,{now:new Date().toISOString()});
+
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+
+    /* 一道原题进草案（走真实工厂；题目结构合法性由 schema 管） */
+    const origin=SchemaCore.createQuestion({id:'p_q1',type:'单选',stem:'HTTP 默认端口是哪个？',
+      options:[{label:'A',text:'21'},{label:'B',text:'80'},{label:'C',text:'443'}],answerLetters:['B'],answer:'B',explanation:''});
+    let draft=ReviewCore.createDraft({questions:[origin]},{title:'P 节草案'}).draft;
+    const draft0Json=ReviewCore.stableJson(draft.questions);
+
+    /* 假 fetch：按调用次序返回三类结果；第 4 次返回"缺易错点"的脏结构 */
+    const plan=[
+      JSON.stringify({explanation:'80 是 HTTP 的默认明文端口。',pitfall:'容易把 HTTPS 的 443 当成默认端口。'}),
+      JSON.stringify({level:3,reason:'记住端口号即可，属识记题'}),
+      JSON.stringify({type:'单选',stem:'HTTPS 默认使用哪个端口？',answer:'C',options:[{label:'A',text:'21'},{label:'B',text:'80'},{label:'C',text:'443'}]}),
+      JSON.stringify({explanation:'这次只有解析，没有易错点'})
+    ];
+    let n=0, reqSeen=0;
+    const fake=async function(){
+      const content=plan[Math.min(n,plan.length-1)]; n++;
+      return {ok:true,status:200,text:async function(){return JSON.stringify({choices:[{message:{content:content}}]});}};
+    };
+    const panel=AiSingle.mount({container:host,store:keyStore,fetchImpl:fake,
+      getDraft:function(){return draft;},applyDraft:function(d){draft=d;}});
+
+    /* ① 界面：三个按钮、≥44px、明写不弹消耗窗、没有确认框节点 */
+    const runBtns=[].slice.call(host.querySelectorAll('[data-asg="run"]'));
+    check(b,runBtns.length===3,'界面上三个操作按钮：'+runBtns.map(function(n){return n.getAttribute('data-asg-kind');}).join('/'));
+    const small=runBtns.filter(function(n){return n.getBoundingClientRect().height<44;});
+    check(b,small.length===0,'三个按钮高度都 ≥44px（触屏可点）',
+      small.map(function(n){return Math.round(n.getBoundingClientRect().height);}).join(','));
+    check(b,host.textContent.indexOf('点一次发一次请求')>=0,'界面上明写"点一次发一次请求"（文案在"删小字"那轮压缩过）');
+    check(b,host.querySelectorAll('[data-confirm]').length===0,'**没有任何消耗确认框节点**（单题路径不弹）');
+    const keyBadge=host.querySelector('[data-asg="key-badge"]');
+    check(b,!!keyBadge&&keyBadge.textContent.indexOf('sk-p…62df')>=0,'面板显示已保存 Key 的**遮罩**',keyBadge?keyBadge.textContent:'（没找到）');
+
+    async function clickRun(kind){
+      const before=panel.stats().requests;
+      [].slice.call(host.querySelectorAll('[data-asg="run"]')).filter(function(x){return x.getAttribute('data-asg-kind')===kind;})[0].click();
+      await sleep0(40);
+      const after=panel.stats().requests;
+      reqSeen+=(after-before);
+      return after-before;
+    }
+    function clickApply(){
+      const btn=host.querySelector('[data-asg="apply"]');
+      if(btn)btn.click();
+      return !!btn;
+    }
+
+    /* ② 解析：1 次请求 → 采纳 → 草案里的解析含易错点 */
+    eq0(b,await clickRun('explain'),1,'点「生成解析」→ **恰好 1 次请求**');
+    check(b,clickApply(),'通过校验 → 出现「附加到原题」按钮并已点下');
+    await sleep0(10);
+    check(b,String(draft.questions[0].explanation).indexOf('易错点：')>=0,
+      '**解析写进了原题，且带易错点**',String(draft.questions[0].explanation).slice(0,40));
+
+    /* ③ 难度：1 次请求 → 采纳 → 写入 1-5 的整数 */
+    eq0(b,await clickRun('difficulty'),1,'点「生成难度」→ 1 次请求');
+    check(b,clickApply(),'  出现「附加到原题」并已点下');
+    await sleep0(10);
+    eq0(b,draft.questions[0].difficulty,3,'难度写进原题（1-5 的整数）');
+
+    /* ④ 变式题：1 次请求 → 采纳 → 草案多一道题（四件套齐全） */
+    eq0(b,await clickRun('variant'),1,'点「生成变式题」→ 1 次请求');
+    check(b,clickApply(),'  出现「加入这份卷」并已点下');
+    await sleep0(10);
+    eq0(b,draft.questions.length,2,'草案变成 2 题（变式题被追加进来）');
+    const nq=draft.questions[1];
+    eq0(b,[nq.type,(nq.options||[]).length,(nq.answerLetters||[]).join('')],['单选',3,'C'],'  新题题型/选项/答案齐全');
+
+    /* ⑤ 脏结构：拒绝、草案**逐字节不变**、不画采纳按钮 */
+    const jsonBefore=ReviewCore.stableJson(draft.questions);
+    eq0(b,await clickRun('explain'),1,'脏结构那一轮也只发 1 次请求');
+    eq0(b,panel.stats().rejected,1,'  记为拒绝 1 次');
+    check(b,host.querySelectorAll('[data-asg="reject"]').length===1,'  画出拒绝框');
+    check(b,host.textContent.indexOf('原题未改动、题库未写入')>=0,'  拒绝框明写"原题未改动、题库未写入"');
+    eq0(b,host.querySelectorAll('[data-asg="apply"]').length,0,'  **不画"采纳"按钮**（被拒绝的结果无处可落）');
+    eq0(b,ReviewCore.stableJson(draft.questions),jsonBefore,'  **草案逐字节未变**');
+
+    /* ⑥ 计数总账：点击 4 次 = 请求 4 次（没有多余探路请求） */
+    eq0(b,[panel.stats().clicks,panel.stats().requests],[4,4],'四次点击 = 四次请求（一次点击一次请求）');
+    eq0(b,reqSeen,4,'  假 fetch 一共被调用 4 次');
+    eq0(b,panel.stats().applies,3,'  采纳 3 次');
+
+    panel.destroy();
+    await AiCore.clearKey(keyStore,'dashscope');
+    eq0(b,(await AiCore.hasKey(keyStore,'dashscope')).configured,false,'收尾：清掉探针 Key');
+    W(b,'想看**真调用**','去「校对面板」填一把真 Key → 用该页「单题智能」按钮；或命令行跑 node verify/real-ai.js（读 DASHSCOPE_API_KEY / DEEPSEEK_API_KEY）');
+    P(b,'单题智能在真浏览器里通过：三类操作各 1 次请求、结果分别写对地方（解析含易错点 / 难度为整数 / 变式题四件套齐全）、脏结构被拒绝且草案逐字节不变、界面无消耗确认窗、按钮 ≥44px');
+  }catch(e){
+    F(b,'P 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== Q. 整卷点评与举一反三（假 fetch） ==================== */
+(async function(){
+  const b='secQ';
+  const PROBE_KEY='sk-'+'probe-'+'scene-2d9f4a71c05e38b6';   // 运行时拼串（成品里不留 sk- 长串）
+  try{
+    const box=document.getElementById('secQ');
+    const ls=window.localStorage;
+    const keyStore=AiCore.openKeyStore(ls);
+    await AiCore.saveKey(keyStore,'dashscope',PROBE_KEY,{now:new Date().toISOString()});
+
+    /* 一套真题 + 一轮真结算（用 scoreExam/gradeLevel，不手捏 per） */
+    const qs=[
+      SchemaCore.createQuestion({id:'q1',type:'单选',stem:'HTTP 默认端口是哪个？',options:[{label:'A',text:'21'},{label:'B',text:'80'}],answerLetters:['B'],answer:'B'}),
+      SchemaCore.createQuestion({id:'q2',type:'判断',stem:'TCP 面向连接。',judgeValue:true}),
+      SchemaCore.createQuestion({id:'q3',type:'简答',stem:'简述三次握手。',keywords:[{text:'SYN'},{text:'ACK'}],answer:'SYN/ACK'})
+    ];
+    const ans={q1:'A',q2:'对',q3:'SYN'};
+    const cfg=QuizCore.mergeConfig(QuizCore.DEFAULT_CONFIG,{});
+    const scored=QuizCore.scoreExam(qs,ans,cfg);
+    const summary=Object.assign({},scored,{level:FlowCore.gradeLevel(scored.percent,cfg).level});
+
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+
+    /* 假 fetch：总评引用了真实百分数（42.9% 之类），保证过反套话闸门 */
+    const pct=summary.percent;
+    let n=0;
+    const fake=async function(){
+      const content=(n++===0)
+        ? JSON.stringify({summary:'本次得分 '+summary.score+'/'+summary.full+'（'+pct+'%），HTTP 默认端口这题答错了。',weakPoints:['端口号记忆'],advice:['背常用端口表']})
+        : JSON.stringify({type:'多选',stem:'下面哪些是应用层协议？',answer:'AB',options:[{label:'A',text:'HTTP'},{label:'B',text:'DNS'},{label:'C',text:'TCP'}]});
+      return {ok:true,status:200,text:async function(){return JSON.stringify({choices:[{message:{content:content}}]});}};
+    };
+
+    /* 整卷总评：未确认零请求 → 确认后 1 请求 */
+    const rp=AiScene.mountReview({container:host,keyStore:keyStore,fetchImpl:fake,summary:summary,questions:qs,answers:ans});
+    check(b,host.querySelectorAll('[data-asc="confirm-dialog"]').length===0,'整卷总评刚挂上时**不弹**确认窗（别自己跳出来打扰人）');
+    host.querySelector('[data-asc="run-review"]').click();
+    await sleep0(20);
+    check(b,host.querySelectorAll('[data-asc="confirm-dialog"]').length===1,'点「生成整卷总评」→ **先弹消耗确认窗**');
+    check(b,host.querySelector('[data-asc="confirm-dialog"]').textContent.indexOf('tokens')>=0,'  确认窗里写着预计消耗');
+    eq0(b,[rp.stats().requests,rp.stats().confirms],[0,0],'  此时**零请求、零确认**');
+    host.querySelector('[data-asc="confirm-no"]').click();
+    await sleep0(10);
+    eq0(b,[rp.stats().cancels,rp.stats().requests],[1,0],'点「取消」→ 取消计数 1、**请求仍为 0**');
+    host.querySelector('[data-asc="run-review"]').click();
+    await sleep0(10);
+    check(b,!!host.querySelector('[data-asc="confirm-yes"]'),'再点一次 → 又弹出确认窗（每次都要明确确认）');
+    host.querySelector('[data-asc="confirm-yes"]').click();
+    await sleep0(60);
+    eq0(b,[rp.stats().confirms,rp.stats().requests],[1,1],'确认后 → **恰好 1 次请求**');
+    check(b,host.querySelectorAll('[data-asc="review-result"]').length===1,'画出总评结果卡');
+    check(b,host.textContent.indexOf('引用了本轮记录')>=0,'  并写出它引用了什么（可核对，不是黑箱）');
+    const revCard=host.querySelector('[data-asc="review-result"]');
+    check(b,revCard.textContent.indexOf('薄弱考点')>=0&&revCard.textContent.indexOf('建议')>=0,'  总评/薄弱考点/建议 三栏都在');
+
+    /* 反套话：把下一轮换成套话 → 被拒且不画结果卡 */
+    let n2=0;
+    const fakeBland=async function(){ n2++; return {ok:true,status:200,text:async function(){return JSON.stringify({choices:[{message:{content:JSON.stringify({summary:'多做练习，打好基础。',weakPoints:['基础'],advice:['多做题']})}}]});}}; };
+    const host2=document.createElement('div');
+    host2.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host2);
+    const rp2=AiScene.mountReview({container:host2,keyStore:keyStore,fetchImpl:fakeBland,summary:summary,questions:qs,answers:ans});
+    host2.querySelector('[data-asc="run-review"]').click();
+    await sleep0(10);
+    host2.querySelector('[data-asc="confirm-yes"]').click();
+    await sleep0(60);
+    check(b,host2.querySelectorAll('[data-asc="review-reject"]').length===1,'模型回套话 → **拒绝**并画出拒绝框');
+    check(b,host2.textContent.indexOf('套话')>=0,'  原因可读：提到"套话"',host2.textContent.match(/套话[^。]*/)?host2.textContent.match(/套话[^。]*/)[0]:'');
+    eq0(b,host2.querySelectorAll('[data-asc="review-result"]').length,0,'  **不画结果卡**（没通过就不给看板）');
+    rp.destroy(); rp2.destroy();
+
+    /* 举一反三：不弹确认窗；生成 → 加入那套卷（真写盘到 app 命名空间） */
+    const appStore=DataCore.createStore({small:ls,large:null,namespace:DataCore.NS_GLOBAL});
+    const DEL_ID='selfcheck-aiscene';
+    await ExamsCore.createExam(appStore,{id:DEL_ID,title:'Q 节临时卷'});
+    await ExamsCore.setQuestions(appStore,DEL_ID,qs,{now:new Date().toISOString()});
+    const host3=document.createElement('div');
+    host3.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host3);
+    const addedLog=[];
+    const mp=AiScene.mountMistake({container:host3,keyStore:keyStore,examStore:appStore,fetchImpl:fake,
+      getSelection:function(){return {examId:DEL_ID,examTitle:'Q 节临时卷',qid:'q1',question:qs[0],index:0,entry:{lastAnswer:'A',times:2,lastScore:0,lastFull:2}};},
+      onAdded:function(r){addedLog.push(r);}});
+    check(b,host3.querySelectorAll('[data-asc="confirm-dialog"]').length===0,'举一反三**没有消耗确认窗**（单题操作）');
+    host3.querySelector('[data-asc="run-variant"]').click();
+    await sleep0(60);
+    eq0(b,mp.stats().requests,1,'点一次 → 1 次请求');
+    check(b,host3.querySelectorAll('[data-asc="variant-result"]').length===1,'画出新题卡');
+    host3.querySelector('[data-asc="add-variant"]').click();
+    await sleep0(80);
+    eq0(b,mp.stats().adds,1,'点「加入《Q 节临时卷》」→ 加入成功');
+    eq0(b,addedLog.length,1,'宿主收到回调');
+    const after=await ExamsCore.getExam(appStore,DEL_ID);
+    const grouped=ExamsCore.groupQuestions(after.exam.questions);
+    check(b,after.exam.questions.length===qs.length+1,'**卷子里真的多了一道题**（'+qs.length+' → '+after.exam.questions.length+'）');
+    check(b,grouped['多选'].length>=1,'  并且出现在**"多选"分组**里（新题题型）');
+    check(b,grouped['单选'].length===1&&grouped['判断'].length===1&&grouped['简答'].length===1,'  其它分组数目没被改动');
+    check(b,addedLog[0].inGroup===true,'回调里 inGroup=true（落在对应分组）',
+      'type='+addedLog[0].type+' 该组='+addedLog[0].groupCount+' 整卷='+addedLog[0].after.total);
+
+    /* 收尾：删掉临时卷（cascade，连记录一起走），并清掉探针 Key */
+    mp.destroy();
+    await ExamsCore.deleteExam(appStore,DEL_ID,{policy:'cascade'});
+    check(b,(await ExamsCore.getExam(appStore,DEL_ID)).ok===false,'收尾：临时卷已删除');
+    await AiCore.clearKey(keyStore,'dashscope');
+    eq0(b,(await AiCore.hasKey(keyStore,'dashscope')).configured,false,'  探针 Key 已清除');
+    W(b,'真调用想看真总评','用「答题页」交卷后点「生成整卷总评」（先弹消耗确认）；或命令行 node verify/real-ai.js');
+    P(b,'整卷点评与举一反三在真浏览器里通过：未确认零请求 → 取消仍零请求 → 确认后 1 请求且总评引用真实记录；套话被拒且不给结果卡；举一反三不弹确认窗、1 次请求、新题一键入卷并落在对应题型分组；临时数据已清理');
+  }catch(e){
+    try{
+      const s=DataCore.createStore({small:window.localStorage,large:null,namespace:DataCore.NS_GLOBAL});
+      await ExamsCore.deleteExam(s,'selfcheck-aiscene',{policy:'cascade'});
+      await AiCore.clearKey(AiCore.openKeyStore(window.localStorage),'dashscope');
+    }catch(_){}
+    F(b,'Q 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== R. 容错与提示（脏输出 / 错误分类 / 批量确认） ==================== */
+(async function(){
+  const b='secR';
+  const PROBE_KEY='sk-'+'probe-'+'tolerant-8a17c3f4e92b5d06';
+  try{
+    const box=document.getElementById('secR');
+    const ls=window.localStorage;
+    const keyStore=AiCore.openKeyStore(ls);
+    await AiCore.saveKey(keyStore,'dashscope',PROBE_KEY,{now:new Date().toISOString()});
+
+    /* ---- ① 脏输出：浏览器里再过一遍（核心逻辑与 Node 同源，这里确认浏览器运行时也不炸） ---- */
+    const dirty=[
+      ['代码围栏','\`\`\`json\n{"explanation":"解析","pitfall":"易错"}\n\`\`\`'],
+      ['前后废话','好的：\n{"explanation":"解析","pitfall":"易错"}\n以上。'],
+      ['中文引号','{“explanation”:“解析”,“pitfall”:“易错”}'],
+      ['单引号',"{'explanation':'解析','pitfall':'易错'}"],
+      ['尾逗号','{"explanation":"解析","pitfall":"易错",}'],
+      ['无引号键','{explanation:"解析",pitfall:"易错"}'],
+      ['截断','{"explanation":"解析","pitfall":"易错'],
+      ['字符串含花括号','{"explanation":"集合 {a}","pitfall":"别漏 }"}'],
+      ['真实换行','{"explanation":"第一行\n第二行","pitfall":"易错"}'],
+      ['JS 注释','{"explanation":"解析", // 注释\n"pitfall":"易错"}'],
+      ['Python 字面量','{explanation:"解析",pitfall:"易错",extra: None}'],
+      ['纯散文（字段抽取兜底）','这道题的答案是 B。\n解析：80 是默认端口。']
+    ];
+    let okCount=0, fallbackCount=0;
+    dirty.forEach(function(c){
+      let r=null, threw='';
+      try{ r=AiCore.safeParseJson(c[1]); }catch(e){ threw=(e&&e.message)||String(e); }
+      if(threw) { F(b,'脏输出「'+c[0]+'」**抛异常了**',threw); return; }
+      if(r && r.ok){ okCount++; if(r.strategy==='fieldFallback') fallbackCount++;
+        if(c[0]==='代码围栏'||c[0]==='中文引号'||c[0]==='截断'){
+          P(b,'脏输出「'+c[0]+'」容错解析成功', '策略='+r.strategy+(r.fixes&&r.fixes.length?('　修复：'+r.fixes.join('、')):''));
+        }
+      } else { F(b,'脏输出「'+c[0]+'」没能容错', JSON.stringify(r)); }
+    });
+    eq0(b,okCount,dirty.length,'**12 类脏输出全部被容错解析或安全降级**（无一抛异常）');
+    check(b,fallbackCount>=1,'  其中 '+fallbackCount+' 类走了字段抽取兜底（不是硬失败）');
+    eq0(b,AiCore.safeParseJson('').ok,false,'空输入不抛异常、明确 ok:false');
+
+    /* ---- ② 三类失败的可操作提示 ---- */
+    const net=AiCore.classifyError(new Error('Failed to fetch'),0);
+    eq0(b,net.kind,'cors_or_network','断网 → 分类 cors_or_network');
+    check(b,/断网|跨域/.test(net.text)&&net.hint.length>10,'  带可操作建议',net.hint);
+    const bad=AiCore.classifyError(null,401);
+    eq0(b,bad.kind,'auth','密钥错误 → 分类 auth');
+    check(b,/设置页/.test(bad.hint),'  建议指向设置页',bad.hint);
+    const jm=AiCore.classifyError(null,400,'{"error":"response_format is not supported"}');
+    eq0(b,jm.kind,'json_unsupported','模型不支持 JSON 模式 → **专用分类**');
+    check(b,/关掉/.test(jm.hint)&&/容错解析/.test(jm.hint),'  建议"关掉 JSON 模式、容错解析能兜"',jm.hint);
+    /* 浏览器里真发一次错误请求（用假 fetch 注入，不联网） */
+    const fb=async function(){return {ok:false,status:400,text:async function(){return '{"error":"response_format is not supported"}';}};};
+    const call=await AiCore.callSaved(keyStore,fb,'dashscope',{task:'explain',user:'x',retries:0});
+    eq0(b,[call.ok,call.kind],[false,'json_unsupported'],'调用层也认得出（响应体一起判）');
+
+    /* ---- ③ 批量先确认：未确认零请求、取消零请求、确认后逐题跑 ---- */
+    const qs=[SchemaCore.createQuestion({id:'rq1',type:'单选',stem:'HTTP 默认端口？',options:[{label:'A',text:'21'},{label:'B',text:'80'}],answerLetters:['B'],answer:'B'}),
+              SchemaCore.createQuestion({id:'rq2',type:'判断',stem:'TCP 面向连接。',judgeValue:true})];
+    const host=document.createElement('div');
+    host.style.cssText='width:375px;max-width:100%;overflow:auto;border:1px dashed #c7ccd3;border-radius:8px;background:#fff;color:#1b1b1f';
+    box.appendChild(host);
+    let n=0;
+    const fakeBatch=async function(){ n++;
+      return {ok:true,status:200,text:async function(){return JSON.stringify({choices:[{message:{content:'{"explanation":"解析'+n+'","pitfall":"易错"}'}}],usage:{prompt_tokens:100,completion_tokens:60,total_tokens:160}});}};};
+    const bp=AiSingle.mountBatch({container:host,keyStore:keyStore,fetchImpl:fakeBatch,kind:'explain',getQuestions:function(){return qs;}});
+    check(b,host.textContent.indexOf('预计 '+bp.plan().totalTokens+' tokens')>=0,'批量面板上就写着估算 token','预计 '+bp.plan().totalTokens+' tokens');
+    eq0(b,host.querySelectorAll('[data-asg="confirm-dialog"]').length,0,'刚挂上时不弹确认窗');
+    host.querySelector('[data-asg="run-batch"]').click();
+    await sleep0(20);
+    eq0(b,host.querySelectorAll('[data-asg="confirm-dialog"]').length,1,'点「开始批量」→ **先弹消耗确认窗**');
+    check(b,host.querySelector('[data-asg="confirm-dialog"]').textContent.indexOf('tokens')>=0,'  确认窗里显示估算 token');
+    eq0(b,[bp.stats().requests,n],[0,0],'  未确认 → **零请求**');
+    host.querySelector('[data-asg="confirm-no"]').click();
+    await sleep0(20);
+    eq0(b,[bp.stats().cancels,bp.stats().requests],[1,0],'点「取消」→ **仍然零请求**');
+    host.querySelector('[data-asg="run-batch"]').click();
+    await sleep0(20);
+    host.querySelector('[data-asg="confirm-yes"]').click();
+    await sleep0(80);
+    eq0(b,[bp.stats().requests,bp.stats().okCount],[2,2],'确认后 → 2 题 2 次请求、全部成功');
+    eq0(b,host.querySelectorAll('[data-asg="batch-item"]').length,2,'逐题结果都画出来了');
+    check(b,host.textContent.indexOf('估算')>=0&&host.textContent.indexOf('实耗')>=0,'  并把"估算 vs 实耗"一起显示出来（可核对）');
+    /* 单题不弹窗（相邻锚） */
+    const host2=document.createElement('div');
+    host2.style.cssText='width:375px;max-width:100%';
+    box.appendChild(host2);
+    const sp=AiSingle.mount({container:host2,store:keyStore,fetchImpl:fakeBatch,getDraft:function(){return {questions:qs};}});
+    eq0(b,host2.querySelectorAll('[data-asg="confirm-dialog"]').length+host2.querySelectorAll('[data-asg="confirm-mask"]').length,0,'单题面板**没有**确认窗节点');
+    host2.querySelector('[data-asg="run"]').click();
+    await sleep0(60);
+    eq0(b,[sp.stats().clicks,sp.stats().requests],[1,1],'单题：点一次 = 1 次请求（不弹窗）');
+    bp.destroy(); sp.destroy();
+    await AiCore.clearKey(keyStore,'dashscope');
+    eq0(b,(await AiCore.hasKey(keyStore,'dashscope')).configured,false,'收尾：探针 Key 已清除');
+    P(b,'容错与提示在真浏览器里通过：12 类脏输出全部容错或安全降级（零异常）、三类失败各有专用分类与可操作建议、批量先弹确认窗（未确认/取消均零请求，确认后逐题跑并显示估算 vs 实耗）、单题不弹窗');
+  }catch(e){
+    try{ await AiCore.clearKey(AiCore.openKeyStore(window.localStorage),'dashscope'); }catch(_){}
+    F(b,'R 节跑挂了',(e&&e.message)||String(e));
+  }
+  finishSum();
+})();
+
+/* ==================== 汇总 / 复制 ==================== */
+function finishSum(){
+  const s=document.getElementById('sum');
+  s.innerHTML='<div class="line"><span class="mark '+(FAIL?'F':'P')+'">'+(FAIL?'有失败':'全通过')+
+    '</span><span>PASS '+PASS+'   FAIL '+FAIL+'   WARN '+WARN+'</span></div>';
+}
+function copyAll(){
+  const text='=== 浏览器自检结果 ===\n'+
+    '时间: '+new Date().toLocaleString()+'\n'+
+    'UA: '+navigator.userAgent+'\n'+
+    '页面: '+location.href+'\n\n'+ALL.join('\n')+'\n\n合计 PASS '+PASS+' / FAIL '+FAIL+' / WARN '+WARN;
+  navigator.clipboard.writeText(text).then(function(){
+    alert('已复制到剪贴板，直接粘给我就行。');
+  }).catch(function(){
+    const w=window.open('','_blank');
+    w.document.write('<pre>'+text.replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]))+'</pre>');
+  });
+}
+setTimeout(finishSum,1200);
+</script></body></html>
