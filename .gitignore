@@ -102,3 +102,5 @@ verify/prefer-redraw-narrow-dump.html
 #   判据不在这份 HTML 里，它的存在与动画时长由 autonext-delay 的 DOM 断言硬证）
 verify/jumpbar-shot.html
 verify/jumpbar-shot-dump.html
+#   「注入链」取证的中間产物（结论件是 inject-parse.js 打出的 20 条判定）
+verify/inject.html
