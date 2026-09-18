@@ -614,6 +614,10 @@
       canNext: session.index < session.questions.length - 1,
       revealed: reveal.showAnswer,                  // ← 这两个才是"能不能看见答案"
       showExplain: reveal.showExplain,
+      /* ⚠ 下面三项**只在允许揭示时**才给值：界面要用它们给选项标"对/错"（用户要求），
+       *   但提前给就等于把答案画在选项上了 —— 泄题。所以和 answerText 同一个门槛。 */
+      answerLetters: (reveal.showAnswer && q && Array.isArray(q.answerLetters)) ? q.answerLetters.slice() : null,
+      judgeTrue: (reveal.showAnswer && q && typeof q.judgeValue === 'boolean') ? q.judgeValue : null,
       answerText: reveal.showAnswer ? answerText(q) : '',
       explain: (reveal.showExplain && q && q.explanation) ? q.explanation : '',
       detail: (reveal.showAnswer && r) ? r.detail : null,

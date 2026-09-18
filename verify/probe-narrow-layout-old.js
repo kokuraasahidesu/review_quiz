@@ -202,9 +202,19 @@ probe('⑱-b 底部固定位不抬过手机底栏 → 「抬过手机底栏」�
   { app: swap('.bottomslot{position:fixed;left:14px;bottom:22px;bottom:calc(env(safe-area-inset-bottom, 0px) + 22px);',
               '.bottomslot{position:fixed;left:14px;bottom:14px;') });
 
-/* ---- 19. 答题中的题号跳转又挪回右上（用户要求放题目下面）→ 锚变红 ---- */
-probe('⑲ 题号跳转挪回右上 → 「答题中题号跳转在题目下面」锚变红', '题号跳转在**题目下面**',
-  { attemptView: swap('    \'.av-root.av-wide:not(.av-finished) .av-body{grid-template-areas:"q a" "n a"}\',\n', '') });
+/* ---- 19. 答题中的题号又挪回题目下/右上（用户本轮要求：搬到**答案解析下面**）→ 锚变红 ---- */
+probe('⑲ 题号挪回题目下面 → 「答案解析下面」锚变红', '答案解析下面',
+  { attemptView: swap("    '.av-root.av-wide:not(.av-finished) .av-body{grid-template-areas:\"q a\" \"q n\"}',\n", '') });
+
+/* ---- 19-b. 窄屏答题中不再把题号摆到最后（又回到"题干 → 题号 → 解析"）→ 锚变红 ---- */
+probe('⑲-b 窄屏题号不在最后 → 「窄屏答题中摆成题干→解析→题号」锚变红', '窄屏答题中用 flex order',
+  { attemptView: swap("    '.av-root:not(.av-wide):not(.av-finished) .av-side{order:2}',\n"
+                    + "    '.av-root:not(.av-wide):not(.av-finished) .av-navbox{order:3}',\n",
+                      "    '.av-root:not(.av-wide):not(.av-finished) .av-navbox{order:2}',\n") });
+
+/* ---- 20~22 那三条（选项标对错 / 题型悬浮提示 / 删掉的那句叮嘱）判据在 attempt.test.js 里，
+ *   所以探针挪到 probe-attempt-old.js ⑪~⑬ —— 探针必须跟着判据走，否则就是空转。 */
+
 
 /* ---- 17-f. 收起态按钮又写回"当前页名"（用户要求写「展开 ▾」）→ 锚变红 ---- */
 probe('⑰-f 收起态按钮写回当前页名 → 「收起态那颗悬浮按钮写展开」锚变红', '收起态那颗悬浮按钮写',

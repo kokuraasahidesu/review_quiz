@@ -224,10 +224,10 @@ eq(grid.filter(g => g.已结束 && !g.文本框), [], '  整卷结束后每一�
 head('③-A 渲染模型：可点元素都在模型里（尺寸/滚动只有真浏览器能验，这里给出清单）');
 
 const mv = A.view(A.createSession({ title: 'V', questions: BANK, config: cfg({}) }));
-eq(Object.keys(mv).sort(), ['answerText', 'canNext', 'canPrev', 'canSubmit', 'detail', 'explain', 'finished',
-    'index', 'lockAnswer', 'progress', 'progressText', 'question', 'revealReason', 'revealed', 'score',
-    'showExplain', 'submitted', 'title', 'total'].sort(),
-   '渲染模型的字段齐全（视图层只按它画）');
+eq(Object.keys(mv).sort(), ['answerLetters', 'answerText', 'canNext', 'canPrev', 'canSubmit', 'detail', 'explain',
+    'finished', 'index', 'judgeTrue', 'lockAnswer', 'progress', 'progressText', 'question', 'revealReason',
+    'revealed', 'score', 'showExplain', 'submitted', 'title', 'total'].sort(),
+   '渲染模型的字段齐全（视图层只按它画；answerLetters/judgeTrue 是"标选项对错"要用的，只在允许揭示时给值）');
 eq([mv.question.kind, Array.isArray(mv.question.options), typeof mv.question.value], [A.INPUT_KIND[BANK[0].type], true, 'string'],
    '  题目部分带 kind/options/value（选项按钮与文本框都从这里来）');
 const judgeV = A.view(A.createSession({ title: 'J', questions: BANK.filter(q => q.type === '判断').slice(0, 1), config: cfg({}) }));
@@ -354,18 +354,25 @@ const fabs = DOM.byAttr(host5, 'data-av', 'finish');
 eq(fabs.length, 1, '  交卷按钮还在（唯一的前进动作）');
 ok(/av-fab/.test(String(fabs[0].className)), '  而且是**右下角常驻**那颗（av-fab）', String(fabs[0].className));
 eq(fabText().indexOf('2') >= 0, true, '  未答 2 题时角标带数字 2：' + fabText());
-const folds = DOM.byClass(host5, 'av-navfold');
-eq(folds.length, 1, '题号索引变成**可折叠**块（details）');
-ok(folds[0].attrs.open === undefined, '  非回看态**默认收起**（大卷不再占满一屏）');
-eq(DOM.byClass(host5, 'mk').length, 2, '选项各带一个选中角标 span（✓ 不只靠颜色）');
+/* 用户本轮要求：「题号跳转功能说明不要单独列出来，和功能放一排」——
+ * 说明不再单独占一行、也不再折叠（折叠会把唯一的说明一起藏掉）：整块是一行 flex：
+ * 左「题号 · 点一下跳转」+ 右题号格。 */
+const navBoxes = DOM.byClass(host5, 'av-nav');
+eq(navBoxes.length, 1, '题号跳转是一整块 av-nav');
+eq(DOM.byClass(host5, 'av-navfold').length, 0, '  **不再**是可折叠块（用户要求：说明与题号同一排，别把说明藏起来）');
+const navHead = DOM.byClass(navBoxes[0], 'h')[0];
+ok(!!navHead && navHead.textContent.indexOf('题号') >= 0 && navHead.textContent.indexOf('点一下跳转') >= 0,
+   '  说明就在这块里、和题号同一排：' + (navHead && navHead.textContent));
+eq(DOM.byClass(navBoxes[0], 'av-grid').length, 1, '  同一块里紧挨着就是题号格');
+eq(DOM.byClass(host5, 'mk').length, 2, '选项各带一个角标 span（✓ / ✗ 不只靠颜色）');
 /* 显示细节（量出来的）：判断题标签别把 √/× 写两遍；题号摘要别重复"已答/未答" */
 A.goto(N1.s, 1); N1.v.refresh();
 eq(DOM.byClass(host5, 'av-opt').map(function (b) { return b.textContent; }), ['√对✓', '×错✓'],
    '判断题两个选项的文字是"√ 对 / × 错"（圆标已含 √/×，不再写"对（√）"）');
 A.goto(N1.s, 0); N1.v.refresh();
-const sumTxt = DOM.byClass(host5, 'av-navfold')[0].children[0].textContent;   // 只看 summary（别把网格/图例的文字也算进来）
-ok(sumTxt.indexOf('已答') < 0 && /第 1 \/ 2 题/.test(sumTxt),
-   '题号摘要只说"第几题 + 点开跳题"（已答/未答由上面的徽章说，不重复）：' + sumTxt);
+const navHead2 = DOM.byClass(DOM.byClass(host5, 'av-nav')[0], 'h')[0].textContent;
+ok(navHead2.indexOf('已答') < 0 && /题号/.test(navHead2),
+   '题号那行只说"题号 · 点一下跳转"（已答/未答由上面的徽章说，不重复）：' + navHead2);
 /* 用户要求："去除顶部多余的一个题号显示" —— 顶部那行**不再**重复"第 N / M 题"（题号栏里已经有了） */
 const headTxt = String(DOM.byClass(host5, 'av-head')[0].textContent);
 ok(headTxt.indexOf('第 ') < 0, '  顶部那行不再重复题号（只剩卷名 + 已答读数）：' + headTxt);
@@ -427,7 +434,7 @@ eq(/--p:100/.test(String((rings[0] && rings[0].style && rings[0].style.cssText) 
 eq([finN3.summary.score, finN3.summary.full], [finN3.summary.full, finN3.summary.full],
    '  两题全对 → 分数 = 满分（圆环与分数出自同一份结算）');
 eq(DOM.byClass(host5, 'av-scale').length, 1, '  还有及格/优秀**刻度条**');
-eq(DOM.byClass(host5, 'av-navfold')[0].attrs.open, 'open', '  交卷后题号索引**默认展开**（正是要逐题回看的时候）');
+eq(DOM.byClass(host5, 'av-nav').length, 1, '  交卷后题号那一块还在（仍是"说明 + 题号"同一排，逐题回看用）');
 eq(DOM.byAttr(host5, 'data-av', 'finish').length, 0, '  交卷后常驻按钮消失（没有"再交一次"）');
 
 head('⑤-b 交卷后：试题回顾进右栏；页面给了 onRestart 才有「再考一张」');
@@ -727,9 +734,82 @@ eq(badCard.length, 1, '  判分卡在');
 ok(/答错/.test(String(badCard[0] && badCard[0].textContent)), '  写着"答错了"：' + String(badCard[0] && badCard[0].textContent).slice(0, 20));
 const ansHead = DOM.byClass(host6, 'av-panel').map(n => String(n.textContent)).join('｜');
 ok(/正确答案：B/.test(ansHead), '  **把正确答案 B 给出来了**（时机=答完一题即显示；若不是这样，规则④也兜底）', ansHead.slice(0, 90));
-/* ⚠ 文案精简过：现在是「答错了：看完正确答案自己点「下一题」。」
- *   "不自动翻页"这件事由上面那条 pendingJump 断言硬证；这里只要求**界面把人引导到"自己点下一题"**。 */
-ok(/看完正确答案自己点/.test(ansHead), '  并明说"看完正确答案自己点「下一题」"', ansHead.slice(0, 120));
+/* 用户本轮要求：**删掉**「答错了：看完正确答案自己点「下一题」」那句提示 ——
+ * 答错时选项已经标红/标绿、下面也写着正确答案，再叮嘱一遍是噪音。
+ * "不自动翻页"这件事由上面那条 pendingJump 断言硬证（行为不依赖这句文案）。 */
+ok(!/看完正确答案自己点/.test(ansHead) && !/答错了：/.test(ansHead),
+   '  **不再**叮嘱"看完自己点下一题"（用户要求删掉；正确答案与红绿标注已经够了）', ansHead.slice(0, 120));
+
+/* 用户本轮要求：**答错之后，你选的那个错项标红、正确项标绿**（单选/判断/多选都要）。
+ * 判据落在 `data-mark` 上（颜色由 CSS 按它上色，测试读得到）。 */
+const optMarks = function (host) {
+  return DOM.byClass(host, 'av-opt').map(function (b) { return b.attrs['data-mark'] || ''; });
+};
+eq(optMarks(host6), ['bad', 'ok'],
+   '答错（选了 A、答案是 B）→ 选错的 A 标 bad（红）、正确的 B 标 ok（绿）');
+const marked = DOM.byClass(host6, 'av-opt').filter(function (b) { return (b.attrs['data-mark'] || '') !== ''; });
+eq(marked.map(function (b) { return b.textContent.slice(-1); }), ['✗', '✓'],
+   '  角标也跟着换字形（✗ / ✓，不只靠颜色 —— 色弱也能认）');
+/* 没作答之前**不许**标（否则等于把答案提前画在选项上 = 泄题） */
+const preMark = mk6({ autoCheck: true, autoNext: false, autoNextMs: 0 });
+eq(optMarks(host6), ['', ''], '  一进来不标（没作答就没有对错可标）');
+DOM.byClass(host6, 'av-opt')[0].click();                      // 选 A（错）→ 自动判分
+eq(optMarks(host6), ['bad', 'ok'], '  判分之后立刻标（B12 那份也是这个结论，这里再确认一次）');
+preMark.v.destroy();
+
+/* 多选：正确的全绿、**你多选的那个**标红、没碰的不动 */
+const M1 = mk6({ autoCheck: true, autoNext: false, autoNextMs: 0 });
+A.goto(M1.s, 2); M1.v.refresh();                              // 第 3 题是多选（答案 AB，选项 A/B/C）
+const mOpts = DOM.byClass(host6, 'av-opt');
+eq(mOpts.length, 3, '多选题三个选项都在');
+mOpts[0].click();                                             // 选 A（正确）
+mOpts[2].click();                                             // 再选 C（错选）
+const submitM = DOM.byAttr(host6, 'data-av', 'submit')[0];
+ok(!!submitM, '多选答了之后出现「提交本题」（多选不自动判分）');
+submitM.click();
+eq(optMarks(host6), ['ok', 'ok', 'bad'],
+   '多选提交后：A/B（正确答案）标绿、你多选的 C 标红');
+eq(DOM.byClass(host6, 'av-opt').map(function (b) { return (b.attrs['data-mark'] || '') === '' ? '' : b.textContent.slice(-1); }),
+   ['✓', '✓', '✗'], '  角标：两个正确 ✓、错选 ✗');
+M1.v.destroy();
+
+/* 用户本轮要求：**每次切换题型时要悬浮窗醒目标注**（同一题型连着答不打扰）。 */
+const mkFlash = function () {
+  host6.textContent = '';
+  const s = A.createSession({ examId: 'NF', title: '题型提示卷', questions: sixQ,
+    config: cfg({ behavior: { autoNextMs: 0 } }), startedAt: 'T' });
+  const v = AttemptView.mount({ container: host6, session: s, onChange: function () {} });
+  return { s: s, v: v };
+};
+const F1 = mkFlash();
+eq(DOM.byAttr(host6, 'data-av', 'typeflash').length, 0, '刚进来**不弹**（只在"换题型"时弹）');
+A.goto(F1.s, 1); F1.v.refresh();                       // 第 1 题单选 → 第 2 题简答
+const fl1 = DOM.byAttr(host6, 'data-av', 'typeflash');
+eq(fl1.length, 1, '换题型（单选 → 简答）→ 弹出悬浮提示');
+const fl1n = fl1[0] || {};
+eq(String(fl1n.textContent || ''), '切换到「简答题」', '  文案写明切到哪一型');
+eq([(fl1n.attrs || {}).role, (fl1n.attrs || {})['aria-live']], ['status', 'polite'], '  无障碍：role=status + aria-live（读屏会播报）');
+F1.v.refresh();
+/* ⚠ 重绘会清空 av-root（提示块也一起没了）—— 要证的是"**不会越堆越多**"，不是"必须还在"：
+ *   重绘通常意味着用户又操作了一下，提示提前消失是合理的。 */
+ok(DOM.byAttr(host6, 'data-av', 'typeflash').length <= 1,
+   '  同一题重绘不会叠出第二块（最多一块）', DOM.byAttr(host6, 'data-av', 'typeflash').length);
+A.goto(F1.s, 2); F1.v.refresh();                       // 简答 → 多选
+const fl2 = DOM.byAttr(host6, 'data-av', 'typeflash');
+eq([fl2.length, String((fl2[0] || {}).textContent || '')], [1, '切换到「多选题」'], '  再换一次 → 换成「多选题」（旧的被替掉，不堆叠）');
+F1.v.destroy();
+/* 同一题型连着答：**不弹**（每题闪一下会很吵） */
+const F2 = (function () {
+  host6.textContent = '';
+  const two = [S.createQuestion({ id: 's1', type: '单选', stem: '甲', options: [{ label: 'A', text: 'a' }, { label: 'B', text: 'b' }], answerLetters: ['A'], answer: 'A' }),
+               S.createQuestion({ id: 's2', type: '单选', stem: '乙', options: [{ label: 'A', text: 'a' }, { label: 'B', text: 'b' }], answerLetters: ['B'], answer: 'B' })];
+  const s = A.createSession({ examId: 'NF2', title: '同型卷', questions: two, config: cfg({ behavior: { autoNextMs: 0 } }), startedAt: 'T' });
+  const v = AttemptView.mount({ container: host6, session: s, onChange: function () {} });
+  return { s: s, v: v };
+})();
+A.goto(F2.s, 1); F2.v.refresh();
+eq(DOM.byAttr(host6, 'data-av', 'typeflash').length, 0, '  同一题型（单选 → 单选）不弹');
+F2.v.destroy();
 
 /* 对照：答对 → 照旧翻（否则"答错不翻"就变成了"永远不翻"） */
 const B13 = mk6({ autoCheck: true, autoNext: true, autoNextMs: 0 });
@@ -866,7 +946,10 @@ DOM.byAttr(T1.host, 'data-av', 'timer')[0].click();
 eq(T1.view.stats().timerPaused, true, '点一下 → 暂停（stats().timerPaused = true）');
 eq(T1.session.timer.paused, true, '  状态落在 session.timer 里（能随进度一起存本机）');
 await sleep(700);
-eq(T1.view.stats().timerMs, beforePause, '  暂停期间读数不再增长（真的停了，不是画着玩）');
+/* ⚠ 允许 1–2ms 的采样噪声：`beforePause` 是点击**之前**读的，而暂停落库发生在点击那一刻，
+ *   两者之间正好可能跨过一个毫秒（机器忙时必现）。真正要证的是"**这 700ms 里没有增长**"。 */
+ok(Math.abs(T1.view.stats().timerMs - beforePause) <= 2,
+   '  暂停期间读数不再增长（真的停了，不是画着玩）', '暂停前 ' + beforePause + ' → 现在 ' + T1.view.stats().timerMs);
 const pausedBall = DOM.byAttr(T1.host, 'data-av', 'timer')[0];
 ok(/已暂停/.test(String(pausedBall && pausedBall.textContent)), '  球上写着「已暂停 ▶」：' + String(pausedBall && pausedBall.textContent));
 ok(/已暂停/.test(String(pausedBall && pausedBall.getAttribute('aria-label'))), '  aria-label 也说清已暂停');

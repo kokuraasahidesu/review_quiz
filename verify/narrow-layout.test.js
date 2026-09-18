@@ -201,16 +201,20 @@ function audit(F) {
      '  声明后面有一块**只在答题时**出现的空行（76px，避免被底部固定栏压住）');
   ok(/de\.classList\.toggle\('answering'/.test(F.answer),
      '  答题态由页面逻辑挂在根元素上（`.answering`），首页态不显示这块空行');
-  /* 电脑端（宽容器 ≥820px）：题干+选项 ｜（右上）题号跳转 +（右下）答案解析。
+  /* 电脑端（宽容器 ≥820px）：题干+选项 ｜ 右栏 = 答案解析 → 题号跳转（用户本轮要求：
+   * "整个题号功能移到答案解析下面"）；交卷页题号仍在右上。
    * 左栏**不限高**（A/B/C/D 必须看得全），只有右栏限高内滚；动作条粘视口底（不受解析影响）。 */
   ok(/\.av-root\.av-wide\{max-width:1100px/.test(F.attemptView)
      && /grid-template-areas:"q n" "q a"/.test(F.attemptView)
-     && /\.av-root\.av-wide:not\(\.av-finished\) \.av-body\{grid-template-areas:"q a" "n a"\}/.test(F.attemptView)
+     && /\.av-root\.av-wide:not\(\.av-finished\) \.av-body\{grid-template-areas:"q a" "q n"\}/.test(F.attemptView)
      && /\.av-root\.av-wide \.av-side\{grid-area:a;max-height:calc\(100vh - 250px\);overflow:auto\}/.test(F.attemptView)
      && /\.av-root\.av-wide \.av-navbox\{grid-area:n/.test(F.attemptView),
-     '作答界面：宽屏 = 左栏题干（不限高）｜答题中题号跳转在**题目下面**、交卷页在右上｜解析占右栏（只右栏内滚）');
-  ok(/body\.appendChild\(main\); body\.appendChild\(navBox\); body\.appendChild\(side\);/.test(F.attemptView),
-     '  DOM 顺序固定 main → navBox → side（窄屏读作"题干 → 题号 → 解析"，题号在题目下面）');
+     '作答界面：宽屏 = 左栏题干（不限高）｜答题中题号跳转在**答案解析下面**、交卷页在右上｜解析占右栏（只右栏内滚）');
+  ok(/body\.appendChild\(main\); body\.appendChild\(navBox\); body\.appendChild\(side\);/.test(F.attemptView)
+     && /\.av-root:not\(\.av-wide\):not\(\.av-finished\) \.av-main\{order:1\}/.test(F.attemptView)
+     && /\.av-root:not\(\.av-wide\):not\(\.av-finished\) \.av-side\{order:2\}/.test(F.attemptView)
+     && /\.av-root:not\(\.av-wide\):not\(\.av-finished\) \.av-navbox\{order:3\}/.test(F.attemptView),
+     '  DOM 顺序固定 main → navBox → side；窄屏答题中用 flex order 摆成"题干 → 答案解析 → 题号"（题号在最下面）');
   ok(!/\.av-root\.av-wide \.av-main\{[^}]*max-height/.test(F.attemptView)
      && /\.av-actions\{[^}]*position:sticky;bottom:72px/.test(F.attemptView),
      '  左栏**不许限高**（限了选项就被切）；动作条改成粘视口底（bottom:72px 让开快捷面板）');

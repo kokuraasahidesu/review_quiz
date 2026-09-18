@@ -324,6 +324,39 @@ probe('⑭ 点球不暂停 → ⑪「点一下 → 暂停」锚变红', function
     console.log((red === true ? '  OK  ' : '  ??  ') + '④ 手动翻页不取消待跳 → ⑧ "取消真的生效"锚变红   锚变红=' + red + (note ? '   ' + note : ''));
   })();
 
+  /* ---- ⑪~⑬ 用户本轮那几条界面规矩（判据在 attempt.test.js 里，所以在这里做"改源码 → 跑套件"）---- */
+  const { execFileSync } = require('child_process');
+  const VIEW_SRC = path.join(HERE, 'ui', 'attempt-view.js');
+  const swapView = function (label, needle, repl) {
+    let red = false, note = '';
+    const bak = VIEW_SRC + '.probe-bak';
+    try {
+      const src = fs.readFileSync(VIEW_SRC, 'utf8');
+      if (src.indexOf(needle) < 0) throw new Error('没找到待替换片段：' + needle.slice(0, 50));
+      fs.writeFileSync(bak, src, 'utf8');
+      fs.writeFileSync(VIEW_SRC, src.replace(needle, repl), 'utf8');
+      let text = '';
+      try { text = execFileSync(process.execPath, [path.join(__dirname, 'attempt.test.js')], { encoding: 'utf8' }); }
+      catch (e) { text = String((e && e.stdout) || '') + String((e && e.stderr) || ''); }
+      const m = /PASS (\d+)\s+FAIL (\d+)/.exec(text);
+      red = !!(m && parseInt(m[2], 10) > 0);
+      note = m ? ('改坏后 PASS=' + m[1] + ' FAIL=' + m[2]) : '（没读到汇总）';
+    } catch (e) { red = '抛错:' + (e && e.message); }
+    finally {
+      try { if (fs.existsSync(bak)) { fs.writeFileSync(VIEW_SRC, fs.readFileSync(bak, 'utf8'), 'utf8'); fs.unlinkSync(bak); } } catch (e2) { /* ignore */ }
+    }
+    results.push([label, red]);
+    console.log((red === true ? '  OK  ' : '  ??  ') + label + '   锚变红=' + red + (note ? '   ' + note : ''));
+  };
+  swapView('⑪ 选项不再标对错 → 「选错标红 / 正确标绿」锚变红',
+    "      b.setAttribute('data-mark', mark);", "      b.setAttribute('data-mark', '');");
+  swapView('⑫ 题型切换不弹悬浮提示 → 「换题型 → 弹出悬浮提示」锚变红',
+    '      if (changed && !m.finished) showTypeFlash(', '      if (false) showTypeFlash(');
+  swapView('⑬ 又加回「看完自己点下一题」那句叮嘱 → 「不再叮嘱」锚变红',
+    "        p.appendChild(el(doc, 'h4', null, '正确答案：' + (m.answerText || '（无）')));",
+    "        p.appendChild(el(doc, 'div', 'av-hint', '答错了：看完正确答案自己点「下一题」'));\n"
+      + "        p.appendChild(el(doc, 'h4', null, '正确答案：' + (m.answerText || '（无）')));");
+
   const bad = results.filter(r => r[1] !== true);
   console.log('\n探针汇总：' + results.length + ' 条  全部能让锚变红=' + (bad.length === 0));
   if (bad.length) { bad.forEach(b => console.log('  未变红：' + b[0] + ' → ' + b[1])); process.exitCode = 1; }

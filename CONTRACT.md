@@ -2652,18 +2652,22 @@ AI 设置面板在校对面板里、导出按钮在答题面板里。同一个 `
 
 ```
 ┌───────────────────────────┬──────────────────────┐
-│ 题干 + 选项（grid-area:q）│ 题号跳转（grid-area:n）│  ← 题号跳转"放一边"，不占题干上方
+│ 题干 + 选项（grid-area:q）│ 答案 / 解析（area:a） │  ← 只有这一栏限高内滚
 │ **不限高、不裁**          ├──────────────────────┤
-│                           │ 答案 / 解析（area:a） │  ← 只有这一栏限高内滚
-└───────────────────────────┴──────────────────────┘
+│                           │ 题号跳转（area:n）    │  ← **答案解析下面**（用户本轮要求：
+└───────────────────────────┴──────────────────────┘      "整个题号功能移到答案解析下面"）
             动作条（上一题 / 下一题 / 提交本题）—— 粘视口底，永不被解析顶走
 ```
 
-- **DOM 顺序仍是 nav → main → reveal**（窄屏 `display:block` 顺序不变），宽屏用
-  `grid-template-areas:"q n" "q a"` 重排 —— 不改结构、不重复渲染，窄屏行为一个字没变。
+- 答题中 `grid-template-areas:"q a" "q n"`（题号在**解析下面**）；**交卷页**仍 `"q n" "q a"`（题号在右上，
+  用户上一轮的要求）。窄屏答题中用 flex order 摆成 **题干 → 答案解析 → 题号**（`:not(.av-wide):not(.av-finished)`）；
+  交卷页窄屏仍是 成绩单 → 题号 → 回顾。DOM 顺序固定 `main → navBox → side`，两种版面各自靠 grid/flex 摆位。
+
+- **DOM 顺序仍是 main → navBox → side**（窄屏靠 flex order 重排），宽屏用
+  `grid-template-areas` 重排 —— 不改结构、不重复渲染。
 - **左栏（题干+选项）绝不许限高**：上一版把 `.av-main` 也 `max-height` 了，选项于是被裁在栏内
   （用户报障"A/B/C/D 又看不全了"）。现在只有 `.av-side` 带 `max-height:calc(100vh - 250px);overflow:auto`，
-  `.av-navbox` 限 26vh ⇒ 题干长/选项多时整页会滚一点，这是**刻意的取舍**（看得全 > 一屏装下）；
+  `.av-navbox` 限 32vh ⇒ 题干长/选项多时整页会滚一点，这是**刻意的取舍**（看得全 > 一屏装下）；
   动作条粘着视口，滚了也够得着。
 - **动作条粘视口**：`.av-actions{position:sticky;bottom:72px;z-index:6}`（底部留 72px 给收起的快捷面板，
   面板展开时 `.av-panel-open` 让它让到 340px）。
@@ -2893,23 +2897,39 @@ node verify/smalltext-parse.js              # 分组打印 + 合计（含长句�
 - 锚：`verify/export-html.test.js` ③-E（多卷打包：文件名 / 载荷两套都在 / 一个块 / `examIds` 优先）、
   真浏览器 `verify/export-share-gen.js`（27 条）、静态 `verify/narrow-layout.test.js`（导出页四件套）。
 
-## 手机端两排折叠 + 返回题库到底部 + 题号跳转放题目下面（用户要求）
+## 手机端两排折叠 + 返回题库到底部 + 题号跳转位置（用户要求，后续又改过一次）
 
 - **两排折叠**（都**只在窄屏**生效，宽屏那几条规则不生效）：
   - 导入 / 校对页工具排：`.toolsrow#revTools` + `#revToolsToggle` + `#revToolsBody`；
-  - 页签排：`#tabsRow` + `#tabsToggle` + `#tabsBar`，折叠时按钮上写着**当前页名**（如「答题 ▾」），
-    点页签 / 点「导出分享」后自动收起。
+  - 页签排：`#tabsRow` + `#tabsToggle` + `#tabsBar`；**启动就铺开**（分享文件打开即作答、不经过首页），
+    收起态那颗悬浮按钮写「展开 ▾」，回到题库首页会自动铺开（`window.__tabsExpand`）。
   - 为什么用媒体查询而不是量宿主：这一层是**页面外壳**，只由窗口宽决定；作答界面才需要量宿主。
-- **返回题库 → 底部栏**：搬进 `#ansBottomSlot`（`position:fixed;left:14px;bottom:14px;z-index:45`），
+- **返回题库 → 底部栏**：搬进 `#ansBottomSlot`（`position:fixed;left:14px;bottom:22px` + 安全区），
   与右下角的「交卷」FAB 一左一右、同一层；**顶栏不再有动作按钮**。
-- **题号跳转 → 题目下面**：宽屏布位分状态 —— 答题中 `.av-wide:not(.av-finished)` 用
-  `grid-template-areas:"q a" "n a"`（题号在题干下面、解析占右栏）；交卷页仍是 `"q n" "q a"`（右上）。
-  DOM 顺序固定 `main → navBox → side` ⇒ 窄屏读作「题干 → 题号 → 解析」，交卷页由 `.av-finished` 的
-  flex order 摆成「成绩单 → 题号 → 回顾」。
-- 锚：`verify/narrow-layout.test.js`（两种 grid 布位、DOM 顺序、两组折叠容器与接线）、
-  `probe-narrow-layout-old.js` ⑰⑱⑲、`verify/mobile-ui-gen.js`（页签折叠 31 条）、
-  `verify/import-bank-gen.js`（宽屏不折 58 条）、`verify/wide-layout-gen.js`（题号位置 36 条）、
-  `verify/answer-library-gen.js`（底部固定位 93 条）。
+- **题号跳转的位置**：用户先说"放题目下面"，后改成 **"整个题号功能移到答案解析下面"**（当前口径）：
+  宽屏答题中 `grid-template-areas:"q a" "q n"`（题号在解析下面）；交卷页仍是 `"q n" "q a"`（右上）。
+  窄屏答题中由 flex order 摆成「题干 → 解析 → 题号」；交卷页仍是「成绩单 → 题号 → 回顾」。
+  DOM 顺序固定 `main → navBox → side`，两种版面各自靠 grid/flex 摆位。
+- **题号那一块本身**：说明与题号**同一排**（左「题号 · 点一下跳转」+ 右题号格，`.av-nav{display:flex}`），
+  不再单开一行说明、也不再折叠（折叠会把唯一的说明一起藏掉）；超过 30 题时网格内部滚动（`.av-nav-many`）。
+- 锚：`verify/narrow-layout.test.js`（两种 grid 布位 + 窄屏 flex order + 两组折叠容器与接线）、
+  `probe-narrow-layout-old.js` ⑰⑱⑲⑲-b、`verify/mobile-ui-gen.js`（页签折叠 54 条）、
+  `verify/import-bank-gen.js`（宽屏不折 58 条）、`verify/wide-layout-gen.js`（题号在**解析下面** 36 条）、
+  `verify/answer-library-gen.js`（底部固定位 128 条）。
+
+## 答题反馈的四条界面规矩（用户要求）
+
+1. **选项标对错**：判分之后（**且允许揭示时**）—— 正确答案那一项标绿（`data-mark="ok"`）、
+   **你选了但它不是答案**的标红（`data-mark="bad"`）、没碰的不标。角标同步换字形（✓ / ✗）。
+   ⚠ 两个前提缺一不可：`m.submitted && m.revealed`（否则等于把答案提前画在选项上 = 泄题）；
+   答案从视图模型顶层的 `answerLetters` / `judgeTrue` 读（只在允许揭示时才有值）。
+2. **删掉「答错了：看完正确答案自己点「下一题」」**那句叮嘱（用户要求）：答错时红绿标注 + 下方
+   「正确答案：X」已经说清，"不自动翻页"由 `pendingJump=false` 这条**行为断言**保证，不靠文案。
+3. **题型切换的悬浮提示**：题号或题型变化时，若**题型变了**就弹一块 `.av-typeflash`
+   （固定居中、黑底白字、1.8 秒淡出、`pointer-events:none`），文案「切换到「多选题」」；
+   同一题型连着答**不弹**；判据是 `题号|题型` 这个键，repaint（判分/勾选）不会重复弹。
+4. 锚：`verify/attempt.test.js`（选项标对错 / 不提前泄题 / 悬浮提示 / 不再叮嘱）、
+   `probe-attempt-old.js` ⑪⑫⑬。
 
 ## 「再抽一次」按钮 + 抽题偏好「未作答优先」（用户要求）
 

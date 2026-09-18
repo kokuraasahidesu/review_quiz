@@ -9706,6 +9706,10 @@
       canNext: session.index < session.questions.length - 1,
       revealed: reveal.showAnswer,                  // ← 这两个才是"能不能看见答案"
       showExplain: reveal.showExplain,
+      /* ⚠ 下面三项**只在允许揭示时**才给值：界面要用它们给选项标"对/错"（用户要求），
+       *   但提前给就等于把答案画在选项上了 —— 泄题。所以和 answerText 同一个门槛。 */
+      answerLetters: (reveal.showAnswer && q && Array.isArray(q.answerLetters)) ? q.answerLetters.slice() : null,
+      judgeTrue: (reveal.showAnswer && q && typeof q.judgeValue === 'boolean') ? q.judgeValue : null,
       answerText: reveal.showAnswer ? answerText(q) : '',
       explain: (reveal.showExplain && q && q.explanation) ? q.explanation : '',
       detail: (reveal.showAnswer && r) ? r.detail : null,
@@ -9795,6 +9799,15 @@
     '.av-opt .mk{flex:0 0 auto;display:none;align-items:center;justify-content:center;min-width:24px;height:24px;',
     'border-radius:50%;background:var(--av-key);color:#fff;font-size:14px;font-weight:700}',
     '.av-opt[aria-pressed="true"] .mk{display:inline-flex}',
+    /* 判分之后标"对/错"（用户要求：**你选错的那个标红、正确的标绿**）。
+     * ⚠ 这两条必须排在 `aria-pressed` 那条**后面**：同特异度时后者会盖掉前者，
+     *   而"选中的错项"同时满足两个条件 —— 排后面才轮得到红色接管。 */
+    '.av-opt[data-mark="ok"]{border-color:var(--av-ok);background:#e9f7ee;box-shadow:inset 3px 0 0 var(--av-ok)}',
+    '.av-opt[data-mark="ok"] .mk{display:inline-flex;background:var(--av-ok)}',
+    '.av-opt[data-mark="bad"]{border-color:var(--av-bad);background:#fdf1f0;box-shadow:inset 3px 0 0 var(--av-bad)}',
+    '.av-opt[data-mark="bad"] .mk{display:inline-flex;background:var(--av-bad)}',
+    '.av-opt[data-mark="ok"] .lb{border-color:var(--av-ok);color:var(--av-ok)}',
+    '.av-opt[data-mark="bad"] .lb{border-color:var(--av-bad);color:var(--av-bad)}',
     '.av-opt[disabled]{opacity:.65;cursor:default}',
     '.av-text{display:block;width:100%;min-height:132px;max-height:300px;overflow:auto;padding:10px 12px;border:1px solid var(--av-line);',
     'border-radius:10px;font:inherit;line-height:1.6;resize:vertical;background:#fff;color:inherit}',
@@ -9847,6 +9860,12 @@
     '.av-root:not(.av-wide).av-finished .av-main{order:1}',
     '.av-root:not(.av-wide).av-finished .av-navbox{order:2}',
     '.av-root:not(.av-wide).av-finished .av-side{order:3}',
+    /* 窄屏**答题中**（用户本轮要求："整个题号功能移到答案解析下面"）：题干 → 答案解析 → 题号跳转。
+     * 用 flex order 摆，不动 DOM —— 宽屏那套 grid-area 布位与窄屏的阅读顺序各自都对。 */
+    '.av-root:not(.av-wide):not(.av-finished) .av-body{display:flex;flex-direction:column}',
+    '.av-root:not(.av-wide):not(.av-finished) .av-main{order:1}',
+    '.av-root:not(.av-wide):not(.av-finished) .av-side{order:2}',
+    '.av-root:not(.av-wide):not(.av-finished) .av-navbox{order:3}',
     '.av-root.av-wide{max-width:1100px;padding:12px 18px 84px}',
     /* 宽屏：题干 | 答案解析 两栏，**整块限高**，两栏各自滚 ——
      * 这样一屏就装下，动作条永远在视野里（用户报的"解析把下一题挤出去"从根上没了）。
@@ -9857,10 +9876,10 @@
     'gap:14px 16px;align-items:start;',
     /* 宽屏布位分两种状态（DOM 顺序固定 main → navBox → side，两种都靠 grid-area 摆）：
      *   · **交卷页**（默认）：左栏成绩单 ｜ 右上题号跳转 ｜ 右下试题回顾（用户上一轮的要求）；
-     *   · **答题中**（:not(.av-finished)）：题号跳转放到**题目下面**（用户本轮要求：
-     *     "题号跳转功能放在题目的下面"），右栏整列给答案解析。 */
+     *   · **答题中**（:not(.av-finished)）：题号跳转搬到**答案解析下面**（用户本轮要求：
+     *     "整个题号功能移到答案解析下面"），右栏顺序 = 答案解析 → 题号跳转。 */
     'grid-template-areas:"q n" "q a"}',
-    '.av-root.av-wide:not(.av-finished) .av-body{grid-template-areas:"q a" "n a"}',
+    '.av-root.av-wide:not(.av-finished) .av-body{grid-template-areas:"q a" "q n"}',
     '.av-root.av-wide .av-main{grid-area:q}',
     '.av-root.av-wide .av-navbox{grid-area:n;max-height:32vh;overflow:auto}',
     /* ⚠ 只有右栏限高内滚（解析可以很长）；左栏绝不再裁 —— 之前把 .av-main 也限高，选项就被切了。 */
@@ -9890,10 +9909,14 @@
     '.av-chip.wrong{background:#fff4e5;border-color:#f0d3a8}',
     '.av-done{text-align:center;padding:16px 4px}',
     '.av-done .big{font-size:34px;font-weight:700;margin:6px 0}',
-    /* 题号索引 */
-    '.av-nav{border:1px solid var(--av-line);border-radius:10px;padding:8px 10px;background:#fbfcfd;margin:0 0 12px}',
-    '.av-nav .h{display:flex;flex-wrap:wrap;align-items:center;gap:8px;font-size:13px;color:var(--av-dim);margin:0 0 8px}',
-    '.av-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:8px}',
+    /* 题号索引：**说明与题号同一排**（用户要求"说明不要单独列出来，和功能放一排"）——
+     * 所以整块是个 flex 行：左边一句短说明，右边就是可点的题号格。 */
+    '.av-nav{display:flex;flex-wrap:wrap;align-items:flex-start;gap:8px 10px;border:1px solid var(--av-line);',
+    'border-radius:10px;padding:8px 10px;background:#fbfcfd;margin:0 0 12px}',
+    '.av-nav .h{flex:0 0 auto;display:flex;align-items:center;gap:8px;min-height:48px;font-size:13px;color:var(--av-dim);white-space:nowrap}',
+    '.av-grid{flex:1 1 240px;display:grid;grid-template-columns:repeat(auto-fill,minmax(48px,1fr));gap:8px}',
+    /* 大卷不要把题号网格铺满一屏：超过三行就内部滚动（题号区现在在解析下面，折叠会把说明一起藏掉） */
+    '.av-nav.av-nav-many .av-grid{max-height:180px;overflow:auto}',
     '.av-no{min-height:48px;min-width:44px;border:1px solid var(--av-line);background:#fff;border-radius:10px;',
     'cursor:pointer;font:inherit;font-weight:600;color:var(--av-fg);position:relative}',
     '.av-no[data-state="answered"]{background:#e9f7ee;border-color:#a9dcbb}',
@@ -9906,6 +9929,16 @@
     '.av-confirm{border:1px solid #f0d3a8;background:#fff8ec;border-radius:10px;padding:10px 12px;margin:0 0 12px}',
     '.av-confirm .msg{font-weight:600;margin:0 0 8px}',
     '.av-sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}',
+    /* 题型切换时的醒目悬浮提示（用户要求"每次切换题型时要悬浮窗醒目标注"）：
+     * 固定居中、黑底白字、约 1.8 秒后自己淡出；`pointer-events:none` → 不挡任何点击。 */
+    '.av-typeflash{position:fixed;left:50%;top:14px;transform:translateX(-50%);z-index:60;pointer-events:none;',
+    'padding:10px 20px;border-radius:999px;background:rgba(27,27,31,.93);color:#fff;font:600 17px/1.3 inherit;',
+    'box-shadow:0 10px 28px rgba(0,0,0,.3);animation-name:av-typeflash;animation-duration:1.8s;',
+    'animation-timing-function:ease-out;animation-fill-mode:forwards}',
+    '@keyframes av-typeflash{0%{opacity:0;transform:translate(-50%,-14px) scale(.92)}',
+    '12%{opacity:1;transform:translate(-50%,0) scale(1.08)}22%{transform:translate(-50%,0) scale(1)}',
+    '78%{opacity:1}100%{opacity:0;transform:translate(-50%,-10px) scale(1)}}',
+    '@media (prefers-reduced-motion:reduce){.av-typeflash{animation:none}}',
     /* 右下角常驻「交卷」：手机上拇指够得着，不随内容滚走；有未答题时带角标。
      * ⚠ 贴底那一档要**抬过手机自己的手势条 / 浏览器底栏**（用户报"答题时找不到返回首页的按钮"，
      *   那一排与这颗同在 `bottom:14px`）—— 安全区 + 固定余量，普通值先兜底（老浏览器不认 env()）。 */
@@ -10107,10 +10140,28 @@
         ? (value === 'true' ? cur === 'true' || cur === '√' || cur === '对' : cur === 'false' || cur === '×' || cur === '错')
         : (q.multi ? cur.indexOf(value) >= 0 : cur === value);
       b.setAttribute('aria-pressed', String(pressed));
+      /* 判分之后给选项标对错（用户要求："答错之后你选的错误选项标红，正确选项标注正确的颜色"）。
+       * 规则：正确答案那一项 → 绿；**你选了但它不是答案** → 红；没选且不是答案 → 不动。
+       * ⚠ 只在"已提交 **且** 允许揭示"时才标 —— 否则等于把答案提前画在选项上（那是泄题）。 */
+      let mark = '';
+      if (m.submitted && m.revealed && q.kind !== 'text') {
+        let isCorrect = null;
+        if (q.kind === 'judge') {
+          if (m.judgeTrue != null) isCorrect = ((value === 'true') === m.judgeTrue);
+        } else {
+          /* ⚠ 答案从 **`m.answerLetters`**（模型顶层，只在允许揭示时给值）读 ——
+           *   第一版写成 `q.answerLetters`（题目子对象里没有这个字段）→ 正确选项永远标不上绿。 */
+          isCorrect = (m.answerLetters || []).indexOf(String(value)) >= 0;
+        }
+        if (isCorrect === true) mark = 'ok';
+        else if (isCorrect === false && pressed) mark = 'bad';
+      }
+      b.setAttribute('data-mark', mark);
       b.disabled = disabled === true;
       const lb = el(doc, 'span', 'lb', q.kind === 'judge' ? (value === 'true' ? '√' : '×') : value);
       const tx = el(doc, 'span', 'tx', label);
-      const mk = el(doc, 'span', 'mk', '✓');            // 选中角标：不只靠颜色区分（CSS 只在 aria-pressed=true 时显示）
+      /* 角标：选中显示 ✓；判分标错时换成 ✗（颜色之外还有字形区分，色弱也能认） */
+      const mk = el(doc, 'span', 'mk', mark === 'bad' ? '✗' : '✓');
       b.appendChild(lb); b.appendChild(tx); b.appendChild(mk);
       b.addEventListener('click', function () {
         if (disabled) return;
@@ -10139,11 +10190,8 @@
         : '';
       p.appendChild(head);
       if (m.revealed) {
-        /* 答错时明说一句"停在这儿看答案"（用户要求：答错要指出正确答案 **且** 不自动翻页）——
-         * 不说的话，用户会以为"自动翻页怎么不灵了"。 */
-        if (m.score && m.score.correct === false) {
-          p.appendChild(el(doc, 'div', 'av-hint', '答错了：看完正确答案自己点「下一题」'));
-        }
+        /* ⚠ 这里原来还有一句「答错了：看完正确答案自己点「下一题」」——
+         *   用户明确要求**删掉**：答错时选项已经标红/标绿、下面也写着正确答案，再叮嘱一遍是噪音。 */
         p.appendChild(el(doc, 'h4', null, '正确答案：' + (m.answerText || '（无）')));
         if (m.showExplain) p.appendChild(el(doc, 'div', 'av-expl', m.explain || '（这道题没有解析）'));
         /* 明细标签按**题型**取舍（用户要求：多选题解析下面那排「命中 / 未命中」删掉）——
@@ -10185,10 +10233,14 @@
     }
 
     /* ---------- 题号索引（点哪跳哪 + 状态实时） ---------- */
+    /* 用户要求：「题号跳转功能说明不要单独列出来，和功能放一排」。
+     * 所以**不再**有一行独立的说明（原来那行写着"题号（点一下跳过去）"），也不再用折叠 `<details>`
+     * （折叠起来会把唯一的说明一起藏掉）：现在是一行 —— 左边短说明「题号 · 点一下跳转」，
+     * 右边紧挨着就是题号格；题多时网格内部滚动（`.av-nav-many`），不占满屏。 */
     function paintNav(m, box) {
       const nav = el(doc, 'div', 'av-nav');
       const head = el(doc, 'div', 'h');
-      head.appendChild(el(doc, 'span', null, '题号（点一下跳过去）'));
+      head.appendChild(el(doc, 'span', null, '题号 · 点一下跳转'));
       /* ⚠ "已答 N / M""未答 K"这两枚徽章这里**不再重复画**：顶栏那行已经写了同样两个数
        *   （用户要求"把不必要的小字删掉"）。只留"人工订正"这一枚 —— 它别处没有。 */
       if (m.finished && session.summary && session.summary.manualCount) {
@@ -10199,6 +10251,7 @@
       const grid = el(doc, 'div', 'av-grid');
       const cells = AttemptCore.navModel(session);
       const revealedAny = cells.some(function (c) { return c.revealed; });
+      if (cells.length > 30) nav.classList.add('av-nav-many');   // 大卷：网格内部滚（说明仍在同一排）
       cells.forEach(function (cell) {
         const b = el(doc, 'button', 'av-no', cell.label);
         b.type = 'button';
@@ -10218,6 +10271,7 @@
         });
         grid.appendChild(b);
       });
+      nav.appendChild(grid);
       const lg = el(doc, 'div', 'av-legend');
       const item = function (color, text) {
         const s = el(doc, 'span');
@@ -10229,16 +10283,7 @@
       lg.appendChild(item('#e9f7ee', '已答'));
       lg.appendChild(item('#fff', '未答'));
       if (revealedAny) lg.appendChild(el(doc, 'span', null, '✓ 对 ✗ 错'));
-      /* 折叠：50 题的卷子不该让题号网格占满一屏。
-       * 默认收起（只留一行进度），交卷后**默认展开**（那会儿正是要逐题回看的时候）。 */
-      const fold = el(doc, 'details', 'av-navfold');
-      if (m.finished) fold.setAttribute('open', 'open');
-      /* 只写"第几题"：折叠起来时这是唯一的进度指示；"点开跳题"这种说明由上面的标题承担 */
-      const sum = el(doc, 'summary', null, '题号 · 第 ' + (m.index + 1) + ' / ' + m.progress.total + ' 题');
-      fold.appendChild(sum);
-      fold.appendChild(grid);
-      fold.appendChild(lg);
-      nav.appendChild(fold);
+      nav.appendChild(lg);
       box.appendChild(nav);
     }
 
@@ -10699,6 +10744,38 @@
       }
     }
 
+    /* ---------- 题型切换的醒目悬浮提示（用户要求"每次切换题型时要悬浮窗醒目标注"） ----------
+     * 只在**题型真的变了**时弹（单选↔多选↔判断↔简答），同一题型连着答不打扰；
+     * 固定居中、黑底白字，1.8 秒后自己淡出（`pointer-events:none`，不挡任何点击）。
+     * ⚠ 判据落在**题号 + 题型**上：repaint（判分/勾选/刷新）不该重新弹一次。 */
+    let flashType = null, flashKey = null, flashTimer = null, flashEl = null;
+    function showTypeFlash(label) {
+      if (flashTimer !== null) { clearTimeout(flashTimer); flashTimer = null; }
+      /* ⚠ 用**缓存引用**摘掉上一块，不用 `rootEl.querySelector`：Node 侧的极简 DOM 桩没实现它
+       *   （测试里就是靠这个桩跑整条渲染链的，别让一个新特性把桩打穿）。 */
+      if (flashEl && flashEl.parentNode) flashEl.parentNode.removeChild(flashEl);
+      const f = el(doc, 'div', 'av-typeflash', '切换到「' + label + '」');
+      f.setAttribute('data-av', 'typeflash');
+      f.setAttribute('role', 'status');
+      f.setAttribute('aria-live', 'polite');
+      rootEl.appendChild(f);
+      flashEl = f;
+      flashTimer = setTimeout(function () {
+        flashTimer = null;
+        if (f.parentNode) f.parentNode.removeChild(f);
+        if (flashEl === f) flashEl = null;
+      }, 1800);
+    }
+    function maybeFlashType(m) {
+      if (!m || !m.question) return;
+      const key = m.index + '|' + m.question.type;
+      if (key === flashKey) return;                     // 同一题的 repaint：不弹
+      const changed = flashType !== null && flashType !== m.question.type;
+      flashKey = key;
+      flashType = m.question.type;
+      if (changed && !m.finished) showTypeFlash(m.question.typeLabel || m.question.type);
+    }
+
     function paint() {
       if (session.finished) confirmState = null;      // 交卷后不该再留着"未答提示"
       syncWide();                                     // 先按**本容器宽度**定宽/窄（宽屏才分栏 + 钉住动作条）
@@ -10753,6 +10830,7 @@
       fabBox = el(doc, 'div');
       rootEl.appendChild(fabBox);
       paintTimer();                                  // 答题计时的悬浮球（开了才出现）
+      maybeFlashType(m);                             // 换了题型就弹一下悬浮提示（用户要求）
       refreshActions();
       if (panel) panel.refresh(session.config);      // 面板显示的值与会话保持一致
     }
@@ -10763,6 +10841,7 @@
       destroy: function () {
         cancelJump();
         stopTick();                                  // 计时器也要一起撤（否则看不见的页面还在走表）
+        if (flashTimer !== null) { clearTimeout(flashTimer); flashTimer = null; }   // 题型提示的定时器同理
         if (typeof window !== 'undefined' && window.removeEventListener) window.removeEventListener('resize', onWinResize);
         if (panel) panel.destroy();
         if (panelHost && panelHost.parentNode) panelHost.parentNode.removeChild(panelHost);

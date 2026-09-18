@@ -224,7 +224,7 @@ const DRIVER = [
   '                    })(), true);',
   /* 顶部不再重复题号：题号只在下面那栏里 */
   '                  var headEl = q1(".av-head");',
-  '                  var navSum = q1(".av-navfold summary") || q1(".av-nav .h");',
+  '                  var navSum = q1(".av-nav .h") || q1(".av-nav");',
   '                  step("顶部那行不再重复题号（只剩卷名 + 已答读数）",',
   '                    [!!headEl && String(headEl.textContent).indexOf("第 ") < 0,',
   '                     !!headEl && /已答 \\d+\\/\\d+/.test(String(headEl.textContent))], [true, true]);',
