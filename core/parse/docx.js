@@ -26,12 +26,21 @@
   const DOC_PATH = 'word/document.xml';
 
   /* ---------------- XML 小工具 ---------------- */
+  /* ⚠ 数字字符引用**必须兜住越界**：`&#99999999;` / `&#x110000;` 会让 `String.fromCodePoint` 抛 RangeError，
+   *   一个改过的 docx 就能把"导入"整条路打断（**拒绝服务**，不是代码执行 —— 但一样是攻击面）。
+   *   越界一律换成 U+FFFD（与"解不出来的字节"同一种表现），照 data.js 的实体解码器那样返回可读文本。
+   *   （`&amp;` 放最后：先把 `&amp;#60;` 解成 `&#60;` 再解数字引用是错的，所以顺序不能动。） */
+  function codePointOr(s, radix) {
+    const v = parseInt(s, radix);
+    if (!isFinite(v) || v < 0 || v > 0x10FFFF) return '\uFFFD';
+    try { return String.fromCodePoint(v); } catch (e) { return '\uFFFD'; }
+  }
   function unescapeXml(s) {
     return String(s)
       .replace(/&lt;/g, '<').replace(/&gt;/g, '>')
       .replace(/&quot;/g, '"').replace(/&apos;/g, "'")
-      .replace(/&#x([0-9a-fA-F]+);/g, function (m, h) { return String.fromCodePoint(parseInt(h, 16)); })
-      .replace(/&#(\d+);/g, function (m, d) { return String.fromCodePoint(parseInt(d, 10)); })
+      .replace(/&#x([0-9a-fA-F]+);/g, function (m, h) { return codePointOr(h, 16); })
+      .replace(/&#(\d+);/g, function (m, d) { return codePointOr(d, 10); })
       .replace(/&amp;/g, '&');
   }
 

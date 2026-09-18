@@ -50,17 +50,46 @@
     return { kind: 'unknown' };
   }
 
-  /* 原生解压（浏览器 / Node 18+ 均有） */
-  async function inflateRaw(raw) {
+  /* 解压上限（**防压缩炸弹**）：一份 10 MB 的 docx 可以声明解压后 10 GB —— 不设限就是"打开即卡死/爆内存"。
+   * 64 MB 对真实卷子绰绰有余（纯文字题面几 MB 已是超大），超了直接报 E_TOO_LARGE 并给出人话建议。
+   * ⚠ 用**流式累计**而不是只看中央目录里的"声明大小"：那个字段是攻击者写的，可以撒谎。 */
+  const INFLATE_MAX_BYTES = 64 * 1024 * 1024;
+
+  /* 原生解压（浏览器 / Node 18+ 均有）。边读边计数，超上限就取消流并报错。 */
+  async function inflateRaw(raw, opts) {
     if (typeof DecompressionStream === 'undefined') {
       throw fail('E_NO_DEFLATE_SUPPORT', '当前浏览器不支持 DecompressionStream("deflate-raw")',
                  '请换用较新的 Chrome/Edge/Firefox 打开（本应用需要它来解压 docx）');
     }
+    const cap = (opts && opts.maxBytes) || INFLATE_MAX_BYTES;
+    let reader = null;
     try {
       const stream = new Blob([raw]).stream().pipeThrough(new DecompressionStream('deflate-raw'));
-      return new Uint8Array(await new Response(stream).arrayBuffer());
+      reader = stream.getReader();
+      const chunks = [];
+      let total = 0;
+      for (;;) {
+        const step = await reader.read();
+        if (step.done) break;
+        const v = step.value;
+        total += v.length;
+        if (total > cap) {
+          try { await reader.cancel(); } catch (e2) { /* 取消失败不影响结论 */ }
+          throw fail('E_TOO_LARGE',
+            'docx 里有一段数据解压后超过 ' + Math.round(cap / 1024 / 1024) + ' MB（疑似压缩炸弹）',
+            '这个文件可能有异常，请用 Word 打开确认内容后另存为新的 .docx 再导入');
+        }
+        chunks.push(v);
+      }
+      const out = new Uint8Array(total);
+      let at = 0;
+      for (let i = 0; i < chunks.length; i++) { out.set(chunks[i], at); at += chunks[i].length; }
+      return out;
     } catch (e) {
+      if (e && e.code) throw e;                       // 已分类的错误（含上面的 E_TOO_LARGE）原样抛出
       throw fail('E_CORRUPT', 'docx 内部数据解压失败（文件可能损坏）', '请用 Word 重新打开另存后再试');
+    } finally {
+      try { if (reader) reader.releaseLock(); } catch (e3) { /* ignore */ }
     }
   }
 
@@ -138,5 +167,6 @@
   }
 
   return { sniff: sniff, unzip: unzip, inflateRaw: inflateRaw, readEntryText: readEntryText,
+           INFLATE_MAX_BYTES: INFLATE_MAX_BYTES,
            OLE2_MAGIC: OLE2_MAGIC, fail: fail };
 });

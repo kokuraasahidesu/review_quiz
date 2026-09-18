@@ -15534,4 +15534,66 @@ const APP_SHELL = document.documentElement.outerHTML;
   else bootShell();
 })();
 </script>
+<script>
+(function () {
+  var canary = [];
+  window.__pwned = canary;
+  window.__err = [];
+  window.addEventListener('error', function (e) { window.__err.push(String(e.message)); }, true);
+  var out = [];
+  function push(s) { out.push(s); }
+  function dump() {
+    var pre = document.getElementById('drvReport');
+    if (!pre) { pre = document.createElement('pre'); pre.id = 'drvReport'; document.body.appendChild(pre); }
+    pre.textContent = out.join('\n');
+  }
+  (async function () {
+    /* 题库里带着「脚本结束标签」那种串：直接 JSON.stringify 塞进 script 块会当场截断驱动脚本
+     * （第一版就栽在这儿：页面什么都没发生）。所以 '<' 一律转义成 \u003c ——
+     * 这也正是应用导出时对载荷做的那件事（见 core/data.js 的 payloadBlock）。
+     * ⚠ 这段注释里不许出现反引号或裸的脚本结束标签：它本身就在模板字符串里。 */
+    var BANK = "【单选】注入A \u003cscript>window.__pwned.push(\"script\")\u003c/script>？\nA. 选项甲 \u003cimg src=x onerror=\"window.__pwned.push('img')\">\nB. 选项乙 \u003csvg onload=\"window.__pwned.push('svg')\">\n答案：A\n解析：解析里放 \u003c/script>\u003ciframe src=\"javascript:window.__pwned.push('iframe')\">\u003c/iframe> 与 \u003ca href=\"javascript:window.__pwned.push('js')\">点我\u003c/a>\n\n【判断】注入B \">\u003cimg src=x onerror=window.__pwned.push(\"img2\")>（　）\n答案：对\n\n【简答】注入C {{constructor.constructor(\"window.__pwned.push(1)\")()}} 与 ${alert(1)} ？\n答案：关键词甲；关键词乙\n解析：\u003cobject data=\"data:text/html,\u003cscript>parent.__pwned.push('obj')\u003c/script>\">\u003c/object>";
+    try {
+    push('MODULES=' + [typeof QuizParser, typeof SchemaCore, typeof AttemptCore, typeof AttemptView, typeof QuizCore].join(','));
+    dump();
+    var parsed = QuizParser.parseText(BANK);
+    var questions = parsed.questions.map(function (q) { return SchemaCore.createQuestion(q); });
+    push('PARSED=' + questions.length);
+    var host = document.getElementById('ansHost');
+    push('HOST=' + !!host);
+    var session = AttemptCore.createSession({ examId: 'INJ-1', title: '注入试探卷', questions: questions,
+      config: QuizCore.resolveConfig(QuizCore.DEFAULT_CONFIG, null), startedAt: 'T' });
+    push('SESSION=' + !!session);
+    var view = AttemptView.mount({ container: host, session: session, onChange: function () {} });
+    push('VIEW=' + !!view);
+    await new Promise(function (r) { setTimeout(r, 400); });
+    dump();
+    var risky = host.querySelectorAll('script,img,svg,iframe,object,embed,form,a[href^="javascript"]');
+    push('RISKY_ELEMENTS=' + risky.length);
+    Array.prototype.slice.call(risky).forEach(function (e) { push('  risky: <' + e.tagName.toLowerCase() + '>'); });
+    var text = String(host.textContent || '');
+    push('LITERAL_SCRIPT=' + (text.indexOf('<script>window.__pwned.push("script")<\/script>') >= 0));
+    push('LITERAL_IMG=' + (text.indexOf('onerror=') >= 0));
+    push('PWNED_AFTER_RENDER=' + canary.length + ':' + canary.join(','));
+    /* 选 A 判分 → 解析那一段也要过一遍 */
+    var opts = host.querySelectorAll('.av-opt');
+    if (opts.length) opts[0].click();
+    await new Promise(function (r) { setTimeout(r, 300); });
+    var submit = host.querySelector('[data-av="submit"], .av-submit, .av-btn');
+    if (submit) submit.click();
+    await new Promise(function (r) { setTimeout(r, 500); });
+    var risky2 = host.querySelectorAll('script,img,svg,iframe,object,embed,form,a[href^="javascript"]');
+    push('RISKY_AFTER_SUBMIT=' + risky2.length);
+    var text2 = String(host.textContent || '');
+    push('LITERAL_JS_URL=' + (text2.indexOf('javascript:window.__pwned.push') >= 0));
+    push('PWNED_AFTER_SUBMIT=' + canary.length + ':' + canary.join(','));
+    push('WINDOW_ERRORS=' + window.__err.length + ':' + window.__err.join(' | '));
+    document.title = 'INJECT_REPORT ' + (canary.length === 0 ? 'CLEAN' : 'PWNED');
+    } catch (e) {
+      push('DRIVER_ERROR=' + ((e && e.message) || e));
+      document.title = 'INJECT_REPORT DRIVER_FAILED';
+    }
+    dump();
+  })();
+})();</script>
 </body></html>

@@ -967,12 +967,22 @@
     if (at >= 0) return src2.slice(0, at) + tag + '\n' + src2.slice(at);
     return src2 + tag;
   }
+  /* 载荷体积上限（**防"巨大分享文件"把接收者卡死**）：分享文件是别人递过来的，
+   * 里面可以塞一段几百 MB 的 JSON —— 不设限的话，收件人一打开就是"页面卡住不动"。
+   * 32 MB 对真实卷子足够（纯文字题面 1 MB 已是超大），超了就当"读不出来"如实报原因。 */
+  const MAX_PAYLOAD_BYTES = 32 * 1024 * 1024;
+
   /* 读回载荷。与清理/计数**共用同一个定位器**（findPayloadBlocks） */
   function extractPayloadDetailed(html) {
     const src = String(html == null ? '' : html);
     const b = findPayloadBlocks(src).filter(function (x) { return x.complete; })[0];
     if (!b) return { ok: false, reason: 'no-payload', message: '这个文件里没有分享载荷块' };
     const body = src.slice(b.endOpen, b.closeStart);
+    if (body.length > MAX_PAYLOAD_BYTES) {
+      return { ok: false, reason: 'too-large',
+               message: '载荷有 ' + Math.round(body.length / 1024 / 1024) + ' MB，超过 '
+                 + Math.round(MAX_PAYLOAD_BYTES / 1024 / 1024) + ' MB 上限（这么大的试卷不正常，已拒绝载入）' };
+    }
     try { return { ok: true, payload: JSON.parse(body), raw: body }; }
     catch (e) { return { ok: false, reason: 'bad-json', message: '载荷块里的 JSON 读不了：' + ((e && e.message) || e) }; }
   }
@@ -1208,6 +1218,7 @@
     SHARE_EXAM_FIELDS: SHARE_EXAM_FIELDS, SHARE_QUESTION_FIELDS: SHARE_QUESTION_FIELDS,
     FORBIDDEN_KEYS: FORBIDDEN_KEYS,
     embedPayload: embedPayload, extractPayload: extractPayload, extractPayloadDetailed: extractPayloadDetailed,
+    MAX_PAYLOAD_BYTES: MAX_PAYLOAD_BYTES,
     payloadBlock: payloadBlock, payloadBlockCount: payloadBlockCount, rawCloseInPayload: rawCloseInPayload,
     PAYLOAD_ID: PAYLOAD_ID,
     // 命名空间与键前缀：唯一真相源（出题者与分享文件都调这里）

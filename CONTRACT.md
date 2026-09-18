@@ -4,7 +4,29 @@
 > "为什么这么写 / 踩过什么坑"的结论。主要给**改这个仓库的人（或 AI）**看；只想用这个软件请回
 > [`README.md`](README.md)。
 > 本文件与 [`docs/verification-log.md`](docs/verification-log.md)（逐轮验收日志）都是**开发过程记录**，
-> 不是使用文档。
+> 不是使用文档。安全侧另有 [`SECURITY.md`](SECURITY.md)（威胁模型 + 实测证据）。
+
+## 〇、安全边界（已冻结 · 改这些等于改攻击面）
+
+别人递过来的东西（题库文本 / docx / 分享文件 / AI 返回）**一律是数据**，四条不许破的规矩：
+
+1. **数据不进 HTML**：任何界面代码都不许把用户数据拼进 `innerHTML` / `insertAdjacentHTML` / `document.write`；
+   一律 `textContent`（取证脚本会扫 `ui/*.js`）。
+2. **不执行数据**：不 `eval`、不 `new Function`、不把字符串当 `setTimeout` 的第一参数（`new Function` 只允许
+   出现在**测试驱动**里做语法自检）。
+3. **docx 不用 XML 解析器**：正则 + `TextDecoder`（所以 XXE / 实体扩展结构性不可能）；数字字符引用**必须兜越界**
+   （`&#99999999;` / `&#x110000;` → U+FFFD，不许抛 `RangeError` 打断导入）。
+4. **对外部输入的体积/深度设上限，且 fail-closed**：
+   - `ZipCore.INFLATE_MAX_BYTES` = 64 MB（单段解压，**流式累计**，不信 zip 头里可撒谎的"声明大小"）
+   - `DataCore.MAX_PAYLOAD_BYTES` = 32 MB（分享文件里的载荷）
+   - `TextFormatCore.MAX_LIST_ITEMS` = 20000；`DataCore.STRIP_MAX_DEPTH` = 32 层
+   超限一律"拒载 + 说清原因"，不许硬吃。
+
+另外两条与分享相关的既有冻结项（见第二十八/二十九章）：载荷内嵌时 `<` → `\u003c`（题面写 `</script>` 也截不断文件）、
+导出白名单 `SHARE_EXAM_FIELDS` / `SHARE_QUESTION_FIELDS` **一个不多一个不少**。
+
+证据：`verify/safety.test.js`（35 条）+ `verify/probe-safety-old.js`（4 条改坏必红）+
+`verify/inject-gen.js` / `inject-parse.js`（真浏览器跑完整注入链，20 条）。
 
 > 本文件是**并行开发的前提**：所有模块只按这里写的签名与形状对接，谁都不许私自改。
 > 改动契约 = 走「修改」流程回审，不许就地改。
